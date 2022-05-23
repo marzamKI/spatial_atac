@@ -6,6 +6,7 @@ library(EnsDb.Mmusculus.v79)
 library(Signac)
 library(Seurat)
 library(DropletUtils)
+library(harmony)
 
 #spatial
 library(STutility)

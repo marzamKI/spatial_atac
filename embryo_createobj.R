@@ -200,3 +200,16 @@ combined <- RunTFIDF(combined) %>%
   FindNeighbors(reduction = "harmony", dims = 1:7) %>%
   FindClusters(resolution = 0.7)
 combined$seurat_clusters_harmony <- combined$seurat_clusters
+
+# create matrix for DCA
+mtx <- as_matrix(combined@assays$peaks@data)
+write.csv(mtx, "combined_q0_peaks.csv")
+
+#run dca on terminal
+######## 
+# dca combined_q0_peaks.csv dca_peaks_q0 \
+#   --threads 3 \
+#   --nosizefactors --nonorminput --nologinput --nocheckcounts \
+#   --saveweights
+#
+#########
