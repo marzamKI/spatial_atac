@@ -296,6 +296,27 @@ heatmap.2(prop[order(nrow(prop):1),],
           xlab="peaks cluster", ylab="dca clusters", 
           col = my_colors, RowSideColors=rev(cols_dca), ColSideColors = cols)
 
+#forebrain
+DefaultAssay(combined) <- "peaks"
+p1 <- ST.FeaturePlot(combined, "chr3-88205246-88207924", ncol = 2, pt.size = 0.7, cols = magenta_scale, max.cutoff = "q95")
+DefaultAssay(combined) <- "dca"
+p2 <- ST.FeaturePlot(combined, "chr3-88205246-88207924", ncol = 2, pt.size = 0.7, cols = magenta_scale, max.cutoff = "q95")
+p1 | p2
+
+#limb
+DefaultAssay(combined) <- "peaks"
+p1 <- ST.FeaturePlot(combined, "chr19-5071232-5073427", ncol = 2, pt.size = 0.7, cols = magenta_scale, max.cutoff = "q95")
+DefaultAssay(combined) <- "dca"
+p2 <- ST.FeaturePlot(combined, "chr19-5071232-5073427", ncol = 2, pt.size = 0.7, cols = magenta_scale, max.cutoff = "q95")
+p1 | p2
+
+# liver
+DefaultAssay(combined) <- "peaks"
+p1 <- ST.FeaturePlot(combined, "chr11-32283339-32285942", ncol = 2, pt.size = 0.7, cols = magenta_scale, max.cutoff = "q95")
+DefaultAssay(combined) <- "dca"
+p2 <- ST.FeaturePlot(combined, "chr11-32283339-32285942", ncol = 2, pt.size = 0.7, cols = magenta_scale, max.cutoff = "q95")
+p1 | p2
+
 # gene activity
 combined[["dca"]] <- NULL
 mtx <- read.table("dca_gene_activity/mean.tsv")
