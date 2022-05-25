@@ -205,11 +205,39 @@ combined$seurat_clusters_harmony <- combined$seurat_clusters
 mtx <- as_matrix(combined@assays$peaks@data)
 write.csv(mtx, "combined_q0_peaks.csv")
 
+# calculate gene activity
+DefaultAssay(combined) <- "peaks"
+annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Mmusculus.v79)
+seqlevelsStyle(annotations) <- 'UCSC'
+Annotation(combined) <- annotations
+gene.activities <- GeneActivity(combined)
+genes <- rownames(gene.activities)
+genes_filter <- c(grep("Pcdh", genes), grep("PCDH", genes), 
+                  grep("UGT", genes), grep("Ugt", genes))
+gene.activities_filtered <- gene.activities[-genes_filter,]
+combined[['RNA']] <- CreateAssayObject(counts = gene.activities_filtered) %>%
+  NormalizeData(assay = 'RNA', normalization.method = 'LogNormalize')
+
+#save raw counts for DCA
+write.csv(combined@assays$RNA@counts, "gene_activity_counts.csv")
+
+saveRDS(combined, "combined_lsi_q0.rds")
+
 #run dca on terminal
+# dca for peaks
 ######## 
 # dca combined_q0_peaks.csv dca_peaks_q0 \
-#   --threads 3 \
-#   --nosizefactors --nonorminput --nologinput --nocheckcounts \
-#   --saveweights
+#  --threads 3 \
+#  --nosizefactors --nonorminput --nologinput --nocheckcounts \
+#  --saveweights
 #
 #########
+
+# dca for gene activity
+######## 
+# dca gene_activity_counts.csv dca_gene_activity \
+#  --threads 3 --saveweights
+#
+#########
+
+
