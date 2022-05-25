@@ -240,4 +240,27 @@ saveRDS(combined, "combined_lsi_q0.rds")
 #
 #########
 
+# load denoised matrices and save objects - separately for peaks and gene activity due to large size
+# peaks
+denoised_counts <- read.table("dca_peaks_q0/mean.tsv", row.names = 1) %>% 
+  as.matrix()
+colnames(denoised_counts) <- sub("\\.", "-", colnames(denoised_counts))
+combined[["dca"]] <- combined[["peaks"]]
+combined@assays$dca@data <- denoised_counts
+combined@assays$dca@counts <- combined@assays$dca@counts[rownames(combined@assays$dca@counts) %in%
+                                                           rownames(combined@assays$dca@data),]
+combined@assays$dca@var.features <- combined@assays$dca@var.features[combined@assays$dca@var.features %in%
+                                                                       rownames(combined@assays$dca@data)]
+rm(denoised_counts)
+saveRDS(combined, "results/combined_denoised_peaks.rds")
 
+# gene activity
+combined[["dca"]] <- NULL
+mtx <- read.table("dca_gene_activity/mean.tsv")
+colnames(mtx) <- gsub("\\.", "-", colnames(mtx))
+DefaultAssay(combined) <- "RNA"
+combined <- subset(combined, cells = colnames(mtx))
+
+combined[["RNA_dca"]] <- CreateAssayObject(counts = as.matrix(mtx))
+rm(mtx)
+saveRDS(combined, "results/combined_denoised_rna.rds")
