@@ -3,10 +3,12 @@
 # omics
 library(GenomeInfoDb)
 library(EnsDb.Mmusculus.v79)
+library(EnsDb.Hsapiens.v86)
 library(Signac)
 library(Seurat)
 library(DropletUtils)
 library(harmony)
+library(gprofiler2)
 
 #spatial
 library(STutility)
@@ -40,5 +42,6 @@ color_sections <- c("#E69F00", "#D55E00", "#aaaa00", "#009E73","#56B4E9", "#0072
 
 #functions
 source("as_matrix.R")
+source("RunNMMF_fix.R")
 
 
