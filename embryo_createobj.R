@@ -254,6 +254,48 @@ combined@assays$dca@var.features <- combined@assays$dca@var.features[combined@as
 rm(denoised_counts)
 saveRDS(combined, "results/combined_denoised_peaks.rds")
 
+DefaultAssay(combined) <- "dca"
+combined <- RunTFIDF(combined) %>%
+  FindTopFeatures(min.cutoff = 'q0') %>%
+  RunSVD() %>%
+  RunHarmony(group.by.vars = "section", 
+             reduction = "lsi", dims.use = 1:7, 
+             assay.use = "dca", 
+             project.dim = F,
+             verbose = T) %>%
+  RunUMAP(reduction = "harmony", dims = 1:7, reduction.name = "umap.harmony") %>%
+  FindNeighbors(reduction = "harmony", dims = 1:7) %>%
+  FindClusters(resolution = 0.7)
+combined$dca_snn_res.0.7 <- combined$seurat_clusters
+
+# compare denoised and peaks
+for(i in 1:6){
+  p1 <- ST.FeaturePlot(combined, "peaks_snn_res.0.7", ncol = 2, split.labels = T, indices = i)
+  p2 <- ST.FeaturePlot(combined, "dca_snn_res.0.7", ncol = 2, split.labels = T, indices = i)
+  
+  print(p1|p2)
+  
+}
+
+my_levels <- c("5", "7", "2","9","3", "4", "8","0","1","10","6")
+Idents(combined) <- "peaks_snn_res.0.7"
+levels(combined) <- my_levels
+combined$peaks_snn_res.0.7 <- Idents(combined)
+
+my_levels <- c("5", "9", "2","7","3", "4", "0","1","8","6")
+Idents(combined) <- "dca_snn_res.0.7"
+levels(combined) <- my_levels
+combined$dca_snn_res.0.7 <- Idents(combined)
+
+
+prop <- prop.table(table(combined$dca_snn_res.0.7, combined$peaks_snn_res.0.7), 1)*100
+fun_color_range <- colorRampPalette(c("gray93", "#AE017E"))  # Create color generating function
+my_colors <- fun_color_range(100)                         
+heatmap.2(prop[order(nrow(prop):1),], 
+          Colv = NA, Rowv = NA, scale="none", 
+          xlab="peaks cluster", ylab="dca clusters", 
+          col = my_colors, RowSideColors=rev(cols_dca), ColSideColors = cols)
+
 # gene activity
 combined[["dca"]] <- NULL
 mtx <- read.table("dca_gene_activity/mean.tsv")

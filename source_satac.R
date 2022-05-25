@@ -37,6 +37,9 @@ cyan_scale <- c("gray93","#F7FCF0","#E0F3DB","#CCEBC5","#7BCCC4","#4EB3D3","#2B8
 #embryo
 bright_visium <- c("#4477AA","#58BEC8","#9ECAE1","#669C39","#669C39","#CCBB44","#2F9558", "#B73D77","#E05B77","#B06992","#A8A8A8","#E08762")
 color_sections <- c("#E69F00", "#D55E00", "#aaaa00", "#009E73","#56B4E9", "#0072B2")
+cols <-  c("#4477AA","#58AAD2","#58BEC8", "#2F9558","#669C39","#CCBB44", "#A8A8A8","#E05B77","#B73D77", "#B06992","#E08762") #embryo clusters res 0.7
+cols_dca <-  c("#4477AA","#58AAD2","#58BEC8", "#2F9558","#669C39","#CCBB44", "#E05B77","#B73D77", "#B06992","#E08762")
+
 
 #brca
 
