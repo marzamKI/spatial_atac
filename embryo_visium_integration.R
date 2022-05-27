@@ -60,7 +60,7 @@ saveRDS(visium, "visium_denoised_rna.rds")
 DefaultAssay(visium) <- "RNA"
 DefaultAssay(combined) <- "RNA"
 
-markers <- FindAllMarkers(combined, logfc.threshold = 0.1, only.pos = T)
+markers <- FindAllMarkers(combined, logfc.threshold = 0.2, only.pos = T)
 table(markers$cluster)
 
 #calculate signatures
