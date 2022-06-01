@@ -81,26 +81,29 @@ saveRDS(cortex, "cortex_denoised_rna.rds")
 rm(combined)
 
 DefaultAssay(cortex) <- "RNA_dca"
-DefaultAssay(obj_dev) <- "RNA"
+cortex <- cortex %>% 
+  FindVariableFeatures() %>%
+  ScaleData() %>%
+  RunPCA()
 
-Idents(cortex) <- "sample"
-cortex$sample_section <- cortex$sample
-table(cortex$sample)
-#cortex <- SubsetSTData(cortex, expression = sample %in% c("1", "2", "7", "8", "9", "10"))
-#table(cortex$sample)
+cortex$mode <- "sATAC"
+obj_dev$mode <- "scRNA"
+obj_list <- list(obj_dev, cortex)
 
-obj_dev <- FindVariableFeatures(obj_dev)
-cortex <- FindVariableFeatures(cortex, selection.method = "vst", nfeatures = 2000)
-all.genes <- rownames(cortex)
-cortex <- ScaleData(cortex, vars.to.regress = "passed_filters")
-cortex <- RunPCA(cortex, features = VariableFeatures(object = cortex))
+obj_list <- lapply(X = obj_list, FUN = function(x) {
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000)
+})
+features <- SelectIntegrationFeatures(object.list = obj_list)
+anchors <- FindIntegrationAnchors(object.list = obj_list, anchor.features = features)
+combined_e15 <- IntegrateData(anchorset = anchors)
+DefaultAssay(combined_e15) <- "integrated"
 
-cortex$Age <- "e15_ATAC"
-
-combined_pseudot <- merge(obj_dev, cortex)
-obj_list <- SplitObject(combined_pseudot, split.by = "Age")
-rm(combined_pseudot)
-rm(obj_dev)
-
-
+combined_e15 <- combined_e15 %>%
+  ScaleData() %>% 
+  RunPCA() %>%
+  RunUMAP(dims = 1:7) %>%
+  FindNeighbors(dims = 1:7) %>%
+  FindClusters(resolution = 0.1)
+DimPlot(combined_e15, reduction = "umap", split.by = "mode", ncol = 2)
 
