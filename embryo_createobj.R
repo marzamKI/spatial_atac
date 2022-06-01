@@ -205,6 +205,30 @@ combined$seurat_clusters_harmony <- combined$seurat_clusters
 mtx <- as_matrix(combined@assays$peaks@data)
 write.csv(mtx, "combined_q0_peaks.csv")
 
+#run dca on terminal
+# dca for peaks
+######## 
+# dca combined_q0_peaks.csv dca_peaks_q0 \
+#  --threads 3 \
+#  --nosizefactors --nonorminput --nologinput --nocheckcounts \
+#  --saveweights
+#
+#########
+
+# load denoised matrices and save objects - separately for peaks and gene activity due to large size
+# peaks
+denoised_counts <- read.table("dca_peaks_q0/mean.tsv", row.names = 1) %>% 
+  as.matrix()
+colnames(denoised_counts) <- sub("\\.", "-", colnames(denoised_counts))
+combined[["dca"]] <- combined[["peaks"]]
+combined@assays$dca@data <- denoised_counts
+combined@assays$dca@counts <- combined@assays$dca@counts[rownames(combined@assays$dca@counts) %in%
+                                                           rownames(combined@assays$dca@data),]
+combined@assays$dca@var.features <- combined@assays$dca@var.features[combined@assays$dca@var.features %in%
+                                                                       rownames(combined@assays$dca@data)]
+rm(denoised_counts)
+saveRDS(combined, "results/combined_denoised_peaks.rds")
+
 # calculate gene activity
 DefaultAssay(combined) <- "peaks"
 annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Mmusculus.v79)
@@ -223,99 +247,12 @@ write.csv(combined@assays$RNA@counts, "gene_activity_counts.csv")
 
 saveRDS(combined, "combined_lsi_q0.rds")
 
-#run dca on terminal
-# dca for peaks
-######## 
-# dca combined_q0_peaks.csv dca_peaks_q0 \
-#  --threads 3 \
-#  --nosizefactors --nonorminput --nologinput --nocheckcounts \
-#  --saveweights
-#
-#########
-
 # dca for gene activity
 ######## 
 # dca gene_activity_counts.csv dca_gene_activity \
 #  --threads 3 --saveweights
 #
 #########
-
-# load denoised matrices and save objects - separately for peaks and gene activity due to large size
-# peaks
-denoised_counts <- read.table("dca_peaks_q0/mean.tsv", row.names = 1) %>% 
-  as.matrix()
-colnames(denoised_counts) <- sub("\\.", "-", colnames(denoised_counts))
-combined[["dca"]] <- combined[["peaks"]]
-combined@assays$dca@data <- denoised_counts
-combined@assays$dca@counts <- combined@assays$dca@counts[rownames(combined@assays$dca@counts) %in%
-                                                           rownames(combined@assays$dca@data),]
-combined@assays$dca@var.features <- combined@assays$dca@var.features[combined@assays$dca@var.features %in%
-                                                                       rownames(combined@assays$dca@data)]
-rm(denoised_counts)
-saveRDS(combined, "results/combined_denoised_peaks.rds")
-
-DefaultAssay(combined) <- "dca"
-combined <- RunTFIDF(combined) %>%
-  FindTopFeatures(min.cutoff = 'q0') %>%
-  RunSVD() %>%
-  RunHarmony(group.by.vars = "section", 
-             reduction = "lsi", dims.use = 1:7, 
-             assay.use = "dca", 
-             project.dim = F,
-             verbose = T) %>%
-  RunUMAP(reduction = "harmony", dims = 1:7, reduction.name = "umap.harmony") %>%
-  FindNeighbors(reduction = "harmony", dims = 1:7) %>%
-  FindClusters(resolution = 0.7)
-combined$dca_snn_res.0.7 <- combined$seurat_clusters
-
-# compare denoised and peaks
-for(i in 1:6){
-  p1 <- ST.FeaturePlot(combined, "peaks_snn_res.0.7", ncol = 2, split.labels = T, indices = i)
-  p2 <- ST.FeaturePlot(combined, "dca_snn_res.0.7", ncol = 2, split.labels = T, indices = i)
-  
-  print(p1|p2)
-  
-}
-
-my_levels <- c("5", "7", "2","9","3", "4", "8","0","1","10","6")
-Idents(combined) <- "peaks_snn_res.0.7"
-levels(combined) <- my_levels
-combined$peaks_snn_res.0.7 <- Idents(combined)
-
-my_levels <- c("5", "9", "2","7","3", "4", "0","1","8","6")
-Idents(combined) <- "dca_snn_res.0.7"
-levels(combined) <- my_levels
-combined$dca_snn_res.0.7 <- Idents(combined)
-
-
-prop <- prop.table(table(combined$dca_snn_res.0.7, combined$peaks_snn_res.0.7), 1)*100
-fun_color_range <- colorRampPalette(c("gray93", "#AE017E"))  # Create color generating function
-my_colors <- fun_color_range(100)                         
-heatmap.2(prop[order(nrow(prop):1),], 
-          Colv = NA, Rowv = NA, scale="none", 
-          xlab="peaks cluster", ylab="dca clusters", 
-          col = my_colors, RowSideColors=rev(cols_dca), ColSideColors = cols)
-
-#forebrain
-DefaultAssay(combined) <- "peaks"
-p1 <- ST.FeaturePlot(combined, "chr3-88205246-88207924", ncol = 2, pt.size = 0.7, cols = magenta_scale, max.cutoff = "q95")
-DefaultAssay(combined) <- "dca"
-p2 <- ST.FeaturePlot(combined, "chr3-88205246-88207924", ncol = 2, pt.size = 0.7, cols = magenta_scale, max.cutoff = "q95")
-p1 | p2
-
-#limb
-DefaultAssay(combined) <- "peaks"
-p1 <- ST.FeaturePlot(combined, "chr19-5071232-5073427", ncol = 2, pt.size = 0.7, cols = magenta_scale, max.cutoff = "q95")
-DefaultAssay(combined) <- "dca"
-p2 <- ST.FeaturePlot(combined, "chr19-5071232-5073427", ncol = 2, pt.size = 0.7, cols = magenta_scale, max.cutoff = "q95")
-p1 | p2
-
-# liver
-DefaultAssay(combined) <- "peaks"
-p1 <- ST.FeaturePlot(combined, "chr11-32283339-32285942", ncol = 2, pt.size = 0.7, cols = magenta_scale, max.cutoff = "q95")
-DefaultAssay(combined) <- "dca"
-p2 <- ST.FeaturePlot(combined, "chr11-32283339-32285942", ncol = 2, pt.size = 0.7, cols = magenta_scale, max.cutoff = "q95")
-p1 | p2
 
 # gene activity
 combined[["dca"]] <- NULL
