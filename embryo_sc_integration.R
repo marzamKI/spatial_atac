@@ -107,3 +107,31 @@ combined_e15 <- combined_e15 %>%
   FindClusters(resolution = 0.1)
 DimPlot(combined_e15, reduction = "umap", split.by = "mode", ncol = 2)
 
+#monocle
+rgs <- rownames(combined_e15@meta.data)[combined_e15$integrated_snn_res.0.1 == "3"]
+cds <- as.cell_data_set(combined_e15) %>%
+  cluster_cells(reduction_method = "UMAP") %>%
+  learn_graph(use_partition = T) %>%
+  order_cells(reduction_method = "UMAP", root_cells = rgs)
+
+# plot trajectories colored by pseudotime
+plot_cells(cds, color_cells_by = "pseudotime", show_trajectory_graph = TRUE)
+
+cortex <- AddMetaData(
+  object = cortex,
+  metadata = cds@principal_graph_aux@listData$UMAP$pseudotime,
+  col.name = "Pseudotime_cortex_e15")
+
+FeatureOverlay(cortex, features = "Pseudotime_cortex_e15", sampleids = 1:2, ncol = 2, value.scale = "all") +
+  plot_layout(guides = "collect")
+
+
+combined_e15 <- AddMetaData(
+  object = combined_e15,
+  metadata = cds@principal_graph_aux@listData$UMAP$pseudotime,
+  col.name = "Pseudotime_e15")
+FeaturePlot(combined_e15, "Pseudotime_e15", cols = viridis(10, option = "magma"), split.by = "mode")
+
+
+
+
