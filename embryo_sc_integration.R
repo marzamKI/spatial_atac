@@ -63,3 +63,44 @@ saveRDS(obj_dev, "data/dev_e15.rds")
 set.seed(123)
 obj_dev <- obj_dev[, sample(colnames(obj_dev), size =1500, replace=F)]
 
+# subset sATAC data
+combined <- readRDS("combined_denoised_rna_nmf.rds") 
+
+# load ctx spot coordinates and subset data
+samples <- c("220327_A1", "220327_A2")
+table <- list()
+for(i in seq_along(samples)){
+  sample <- samples[i]
+  table[[sample]] <- read.table(paste0("meta/", sample, "_ctx.tsv"), sep = "\t", header = T)
+  table[[sample]]$barcode_1 <- paste0(table[[sample]]$barcode, "-1_", i)
+}
+infoTable <- do.call("rbind", table) %>% as.data.frame()
+
+cortex <- SubsetSTData(combined, expression = barcode %in% infoTable$barcode_1)
+saveRDS(cortex, "cortex_denoised_rna.rds")
+rm(combined)
+
+DefaultAssay(cortex) <- "RNA_dca"
+DefaultAssay(obj_dev) <- "RNA"
+
+Idents(cortex) <- "sample"
+cortex$sample_section <- cortex$sample
+table(cortex$sample)
+#cortex <- SubsetSTData(cortex, expression = sample %in% c("1", "2", "7", "8", "9", "10"))
+#table(cortex$sample)
+
+obj_dev <- FindVariableFeatures(obj_dev)
+cortex <- FindVariableFeatures(cortex, selection.method = "vst", nfeatures = 2000)
+all.genes <- rownames(cortex)
+cortex <- ScaleData(cortex, vars.to.regress = "passed_filters")
+cortex <- RunPCA(cortex, features = VariableFeatures(object = cortex))
+
+cortex$Age <- "e15_ATAC"
+
+combined_pseudot <- merge(obj_dev, cortex)
+obj_list <- SplitObject(combined_pseudot, split.by = "Age")
+rm(combined_pseudot)
+rm(obj_dev)
+
+
+
