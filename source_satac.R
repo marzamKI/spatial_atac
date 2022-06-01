@@ -9,6 +9,7 @@ library(Seurat)
 library(DropletUtils)
 library(harmony)
 library(gprofiler2)
+library(loomR)
 
 #spatial
 library(STutility)
@@ -43,12 +44,12 @@ visium_dca <- c("#4477AA","#58BEC8","#669C39","#9ECAE1","#ccddaa","#CCBB44","#2F
 color_sections <- c("#E69F00", "#D55E00", "#aaaa00", "#009E73","#56B4E9", "#0072B2")
 cols <-  c("#4477AA","#58AAD2","#58BEC8", "#2F9558","#669C39","#CCBB44", "#A8A8A8","#E05B77","#B73D77", "#B06992","#E08762") #embryo clusters res 0.7
 cols_dca <-  c("#4477AA","#58AAD2","#58BEC8", "#2F9558","#669C39","#CCBB44", "#E05B77","#B73D77", "#B06992","#E08762")
-
+cols_nmf <-c("#4477AA", "#66CCEE", "#228833", "#76A13B", "#CCBB44", "#BBBBBB","#EE6677", "#CB4C77", "#B27699","#AA3377", "#E69F00", "#D55E00")
 
 #brca
 
 #functions
 source("as_matrix.R")
-source("RunNMMF_fix.R")
+source("RunNMF_fix.R")
 
 
