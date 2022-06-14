@@ -142,5 +142,31 @@ for(i in seq_along(infoTable$tissue_paths)){
 tissue_md_combined <- do.call("rbind", tissue_md) 
 combined <- AddMetaData(combined, tissue_md_combined)
 
+#preprocess raw data
+combined <- combined %>% 
+  RunTFIDF() %>%
+  FindTopFeatures(min.cutoff = 'q0') %>%
+  RunSVD() %>%
+  RunUMAP(reduction = 'lsi', dims = 2:7) %>%
+  FindNeighbors(reduction = 'lsi', dims = 2:7) %>%
+  FindClusters(algorithm = 3, resolution = 0.5)
+
+#save matrix for denoising
+write.csv(combined@assays$peaks@data,
+          "data/combined_encode_q0_peak_bc_matrix.csv")
+
+# calculate gene activity
+DefaultAssay(combined) <- "peaks"
+annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Hsapiens.v86)
+seqlevelsStyle(annotations) <- 'UCSC'
+Annotation(combined) <- annotations
+gene.activities <- GeneActivity(combined)
+
+# add the gene activity matrix to the Seurat object as a new assay and normalize it
+gene.activities <- gene.activities[-grep("PCDH", rownames(gene.activities)),]
+gene.activities <- gene.activities[-grep("UGT", rownames(gene.activities)),]
+combined[['RNA']] <- CreateAssayObject(counts = gene.activities)
+write.csv(combined@assays$RNA@counts, "data/gene_activity_counts.csv")
+
 
 
