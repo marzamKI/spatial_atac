@@ -68,3 +68,79 @@ for(i in 1:3){
 
 saveRDS(object, "data/brca_unmerged.rds")
 
+
+# make tissue files
+for(i in seq_along(infoTable$tissue_paths)){
+  spotfile <- read.table(infoTable$tissue_paths[i], sep = "\t", header = T)
+  
+  spotfile_tissue <- cbind(
+    spotfile$row, #array_row
+    spotfile$col, #array_col
+    spotfile$x, #pxl_row_in_fullres
+    spotfile$y #pxl_col_in_fullres
+  ) %>% as.data.frame()
+  tissue <- rep(1, nrow(spotfile_tissue))
+  spotfile_tissue <- cbind(tissue, spotfile_tissue)
+  rownames(spotfile_tissue) <- paste0(spotfile$barcode, "-1")
+  
+  write.csv(spotfile_tissue, 
+            paste0(strsplit(infoTable$tissue_paths[i], "tsv"), "csv"), 
+            sep = ",")
+  
+}
+
+# load spotfiles
+tissue_md <- list()
+object$mtx <- list()
+
+for(i in seq_along(infoTable$spotfiles)){
+  spotfile <- read.csv(infoTable$spotfiles[i],
+                       col.names = c("barcode", "tissue", "y", "x", "pixel_y", "pixel_x")
+  )
+  
+  mtx <- object$counts[[i]]
+  mtx <- mtx[,colnames(mtx) %in% spotfile$barcode]
+  
+  object$mtx[[i]] <- mtx
+  
+  #save spot info in a list
+  tissue_md[[i]] <- spotfile
+}
+
+signac_object <- list()
+
+for(i in seq_along(infoTable$spotfiles)){
+  assay <- CreateChromatinAssay(object$mtx[[i]], 
+                                fragments = object$frag[[i]])
+  
+  signac_object[[i]] <- CreateSeuratObject(assay, 
+                                           assay = "peaks", 
+                                           meta.data=object$md[[i]])
+  signac_object[[i]]$section <- rownames(infoTable)[i]
+  signac_object[[i]]$sample <- i
+  # compute LSI
+  signac_object[[i]] <- FindTopFeatures(signac_object[[i]], min.cutoff = 10)
+  signac_object[[i]] <- RunTFIDF(signac_object[[i]])
+  signac_object[[i]] <- RunSVD(signac_object[[i]])
+}
+
+# merge objects
+combined <- merge(
+  x = signac_object[[1]],
+  y = c(signac_object[2:3])
+)
+
+table(combined$section)
+table(combined$sample)
+
+# add spatial data to meta
+for(i in seq_along(infoTable$tissue_paths)){
+  tissue_md[[i]]$barcode <- paste0(tissue_md[[i]]$barcode, "_", i)
+  rownames(tissue_md[[i]]) <- tissue_md[[i]]$barcode 
+}
+
+tissue_md_combined <- do.call("rbind", tissue_md) 
+combined <- AddMetaData(combined, tissue_md_combined)
+
+
+
