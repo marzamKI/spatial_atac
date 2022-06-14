@@ -210,6 +210,26 @@ combined@assays$dca@counts <- combined@assays$dca@counts[rownames(combined@assay
 combined@assays$dca@var.features <- combined@assays$dca@var.features[combined@assays$dca@var.features %in%
                                                                        rownames(combined@assays$dca@data)]
 rm(denoised_counts)
+
+## compare DCA clustering
+DefaultAssay(combined) <- "dca"
+combined <- RunTFIDF(combined) %>%
+  FindTopFeatures(min.cutoff = 'q0') %>%
+  RunSVD() %>%
+  RunUMAP(dims = 2:9) %>%
+  FindNeighbors(dims = 2:9) %>%
+  FindClusters(resolution = 0.5)
+combined$dca_snn_res.0.5 <- combined$seurat_clusters
+
+levels(combined$peaks_snn_res.0.5) <- c("2", "4", "1", "3", "0")
+levels(combined$dca_snn_res.0.5) <- c("2", "3", "0", "4", "1")
+
+prop <- prop.table(table(combined$peaks_snn_res.0.5, combined$dca_snn_res.0.5), 1)*100
+heatmap(prop[order(nrow(prop):1),], 
+        Colv = NA, Rowv = NA, scale="none", 
+        xlab="peaks cluster", ylab="dca clusters", 
+        col = hm_colors, RowSideColors=rev(colors_okate), ColSideColors = colors_okate)
+
 saveRDS(combined, "results/combined_brca_denoised_peaks.rds")
 
 # calculate gene activity
@@ -242,6 +262,7 @@ combined <- subset(combined, cells = colnames(mtx))
 combined[["RNA_dca"]] <- CreateAssayObject(counts = as.matrix(mtx))
 rm(mtx)
 saveRDS(combined, "results/combined_brca_denoised_rna.rds")
+
 
 
 

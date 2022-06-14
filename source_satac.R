@@ -4,6 +4,7 @@
 library(GenomeInfoDb)
 library(EnsDb.Mmusculus.v79)
 library(EnsDb.Hsapiens.v86)
+library(BSgenome.Hsapiens.UCSC.hg38)
 library(Signac)
 library(Seurat)
 library(DropletUtils)
@@ -49,6 +50,7 @@ cols_dca <-  c("#4477AA","#58AAD2","#58BEC8", "#2F9558","#669C39","#CCBB44", "#E
 cols_nmf <-c("#4477AA", "#66CCEE", "#228833", "#76A13B", "#CCBB44", "#BBBBBB","#EE6677", "#CB4C77", "#B27699","#AA3377", "#E69F00", "#D55E00")
 
 #brca
+colors_okate <- c("#E69F00",  "#F0E442", "#009E73",  "#56B4E9",  "#CC79A7")
 
 #functions
 source("as_matrix.R")
