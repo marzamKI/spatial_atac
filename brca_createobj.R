@@ -28,9 +28,8 @@ gr <- read.csv(
   sep = ";"
 ) %>% makeGRangesFromDataFrame()
 
-# create common peak set
-for(i in 1:3){
-  
+for(i in seq_along(dirs)){
+  folder = strsplit(infoTable$samples[i], "raw_peak_bc_matrix.h5") %>% unlist()
   # load metadata
   object$md[[i]] <- read.table(
     file = infoTable$singlecell[i],
@@ -46,27 +45,26 @@ for(i in 1:3){
     cells = rownames(object$md[[i]])
   )
   
-  # make count matrix
-  object$counts[[i]] <- FeatureMatrix(
-    fragments = object$frag[[i]],
-    features = gr,
-    cells = rownames(object$md[[i]])
-  )
-  
-  # save sparse matrix
-  folder = strsplit(infoTable$samples[i], "raw_peak_bc_matrix.h5") %>% unlist()
-  
   if (file.exists(paste0(folder, "brca_peak_bc_matrix.h5"))) {
     message("File exists.")
+    object$counts[[i]] <- Read10X_h5(paste0(folder, "brca_peak_bc_matrix.h5"))
+    
   } else {
+    
+    # make count matrix
+    object$counts[[i]] <- FeatureMatrix(
+      fragments = object$frag[[i]],
+      features = gr,
+      cells = rownames(object$md[[i]])
+    )
+    
     write10xCounts(path = paste0(folder, "brca_peak_bc_matrix.h5"),
                    x = object$counts[[i]],
                    type = "HDF5")
   }
   
 }
-
-saveRDS(object, "data/brca_unmerged.rds")
+saveRDS(object, "data/brca/brca_unmerged.rds")
 
 
 # make tissue files
