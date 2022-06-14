@@ -175,7 +175,6 @@ se <- LoadImages(se, time.resolve = F)
 #combined <- readRDS("data/combined_denoised_rna.rds")
 combined@tools[["Staffli"]] <- se@tools$Staffli
 
-
 #preprocess raw data
 combined <- combined %>% 
   RunTFIDF() %>%
@@ -187,7 +186,31 @@ combined <- combined %>%
 
 #save matrix for denoising
 write.csv(combined@assays$peaks@data,
-          "data/combined_encode_q0_peak_bc_matrix.csv")
+          "data/combined_brca_q0_peak_bc_matrix.csv")
+
+#run dca on terminal
+# dca for peaks
+######## 
+# dca combined_brca_q0_peak_bc_matrix.csv dca_peaks_q0_brca \
+#  --threads 3 \
+#  --nosizefactors --nonorminput --nologinput --nocheckcounts \
+#  --saveweights
+#
+#########
+
+# load denoised matrices and save objects - separately for peaks and gene activity due to large size
+# peaks
+denoised_counts <- read.table("dca_peaks_q0_brca/mean.tsv", row.names = 1) %>% 
+  as.matrix()
+colnames(denoised_counts) <- sub("\\.", "-", colnames(denoised_counts))
+combined[["dca"]] <- combined[["peaks"]]
+combined@assays$dca@data <- denoised_counts
+combined@assays$dca@counts <- combined@assays$dca@counts[rownames(combined@assays$dca@counts) %in%
+                                                           rownames(combined@assays$dca@data),]
+combined@assays$dca@var.features <- combined@assays$dca@var.features[combined@assays$dca@var.features %in%
+                                                                       rownames(combined@assays$dca@data)]
+rm(denoised_counts)
+saveRDS(combined, "results/combined_brca_denoised_peaks.rds")
 
 # calculate gene activity
 DefaultAssay(combined) <- "peaks"
@@ -200,7 +223,26 @@ gene.activities <- GeneActivity(combined)
 gene.activities <- gene.activities[-grep("PCDH", rownames(gene.activities)),]
 gene.activities <- gene.activities[-grep("UGT", rownames(gene.activities)),]
 combined[['RNA']] <- CreateAssayObject(counts = gene.activities)
-write.csv(combined@assays$RNA@counts, "data/gene_activity_counts.csv")
+write.csv(combined@assays$RNA@counts, "data/gene_activity_counts_brca.csv")
+
+# dca for gene activity
+######## 
+# dca gene_activity_counts_brca.csv dca_gene_activity_brca \
+#  --threads 3 --saveweights
+#
+#########
+
+# gene activity
+combined[["dca"]] <- NULL
+mtx <- read.table("dca_gene_activity_brca/mean.tsv")
+colnames(mtx) <- gsub("\\.", "-", colnames(mtx))
+DefaultAssay(combined) <- "RNA"
+combined <- subset(combined, cells = colnames(mtx))
+
+combined[["RNA_dca"]] <- CreateAssayObject(counts = as.matrix(mtx))
+rm(mtx)
+saveRDS(combined, "results/combined_brca_denoised_rna.rds")
+
 
 
 
