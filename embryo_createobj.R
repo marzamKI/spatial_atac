@@ -20,7 +20,6 @@ object <- list(md = list(),
 
 # make new matrices with encode peaks
 # load peaks
-# load peaks
 gr_12 <- read.table(
   file = "E12_peaks_ALL.bed",
   col.names = c("chr", "start", "end")
@@ -76,9 +75,7 @@ for(i in seq_along(dirs)){
   
 }
 
-saveRDS(object, "results/samples_unmerged.rds")
-#object <- readRDS("results/samples_unmerged.rds")
-
+saveRDS(object, "data/embryo_unmerged.rds")
 
 # make tissue files
 for(i in seq_along(dirs)){
