@@ -140,6 +140,42 @@ for(i in seq_along(infoTable$tissue_paths)){
 tissue_md_combined <- do.call("rbind", tissue_md) 
 combined <- AddMetaData(combined, tissue_md_combined)
 
+
+table <- list()
+for(i in dirs){
+  table[[i]] <- c(samples = paste0("data/brca", i, "/brca_peak_bc_matrix.h5"),
+                  spotfiles = paste0("meta/", i, "_tissue.csv"),
+                  imgs = paste0("images/", i, "_cropped.jpg"))
+}
+
+infoTable <- do.call("rbind", table) %>% as.data.frame()
+
+for (i in 1:length(dirs)) {
+  # Read *_tissue.csv file
+  xy.raw <- setNames(read.csv(file = infoTable$spotfiles[i]), 
+                     nm = c("barcode", "tissue", "y", "x", "pixel_y", "pixel_x"))
+  xy <- xy.raw[, c("x", "y")]
+  
+  img_path <- infoTable$imgs[i]
+  img <- readJPEG(img_path)
+  
+  sf <- c(ncol(img)/128, nrow(img)/78)
+  xy$x <- xy$x*sf[1]
+  xy$y <- xy$y*sf[2]
+  
+  # Create a new spot selection table with proper image pixel coordinates which match the cropped images
+  spotfile <- data.frame(xy.raw$barcode, xy.raw$tissue, xy.raw$y, xy.raw$x, round(xy$y), round(xy$x))
+  write.table(spotfile, file = paste0(strsplit(infoTable$spotfiles[i], ".csv"), "_positions_list.csv"), 
+              sep = ",", quote = F, row.names = F, col.names = F)
+}
+
+infoTable$spotfiles <- paste0(strsplit(infoTable$spotfiles, ".csv"), "_positions_list.csv")
+se <- InputFromTable(infoTable, scaleVisium = 1)
+se <- LoadImages(se, time.resolve = F)
+#combined <- readRDS("data/combined_denoised_rna.rds")
+combined@tools[["Staffli"]] <- se@tools$Staffli
+
+
 #preprocess raw data
 combined <- combined %>% 
   RunTFIDF() %>%
