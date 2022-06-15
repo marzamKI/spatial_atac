@@ -1,6 +1,7 @@
 #
 source("source_satac.R")
 
+#scRNAseq from http://mousebrain.org/development/downloads.html
 #sc preprocessing
 lfile <- connect(filename = "~/Downloads/dev_all.loom", mode = "r+", skip.validate = TRUE)
 names(lfile$col.attrs)

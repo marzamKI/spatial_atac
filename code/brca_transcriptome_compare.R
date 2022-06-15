@@ -66,7 +66,7 @@ p2|p4|p6
 saveRDS(visium, "visium_denoised_rna.rds")
 
 
-## scRNA-seq
+## scRNA-seq from https://www.nature.com/articles/s41588-021-00911-1
 meta_sc <- read.csv("data/Wu_etal_2021_BRCA_scRNASeq/metadata.csv", row.names = 1)
 mtx <- Read10X("data/Wu_etal_2021_BRCA_scRNASeq/", gene.column = 1)
 sc_obj <- CreateSeuratObject(mtx, meta.data = meta_sc) %>%
