@@ -166,11 +166,122 @@ ggplot(top_go, aes(x=fct_term_name, y=log_p)) +
   ) +
   NoLegend()
 
-#####
-# ADD MOTIF ANALYSIS!!
-#####
+# motif analysis
+# MOTIF ANALYSIS PER CLUSTER
+# Curated motif lists and archetypes were obtained from https://www.vierstra.org/resources/motif_clustering and RDS file downloaded from  https://jeffgranja.s3.amazonaws.com/ArchR/Annotations/Vierstra_Individual_Motifs.rds  or https://jeffgranja.s3.amazonaws.com/ArchR/Annotations/Vierstra_Archetype_Motifs_v2.1.rds
+Vierstra <- readRDS("/Users/enric.llorens/Downloads/Vierstra_Individual_Motifs.rds")
+# add motif information
+DefaultAssay(combined) <- 'peaks'
+combined <- AddMotifs(
+  object = combined,
+  genome = BSgenome.Mmusculus.UCSC.mm10,
+  pfm = Vierstra
+)
 
+# Identify peaks linked to differentially accessible genes based on co-accessibility and example with cluster 5:
+combined <- LinkPeaks(
+  combined,
+  peak.assay = "peaks",
+  expression.assay = "RNA", min.cells = 3, score_cutoff = 0.05,
+  genes.use = rownames(da_genes_clust_01), min.distance = 1000
+)
 
+c5_genes <- read.csv2('/.../cl5_da_genes.csv', 
+                      header = FALSE )$V1
+linked_c5 <- GetLinkedPeaks(combined, c5_genes, min.abs.score = 0.1, assay = 'peaks')
+
+open.peaks <- AccessiblePeaks(combined, idents = c('5'))
+peaks.matched <- MatchRegionStats(
+  meta.feature = meta.feature[open.peaks, ],
+  query.feature = meta.feature[linked_c5, ],
+  n = 13000
+)
+Vierstra.motifs.linked.5 <- FindMotifs(
+  object = combined,
+  features = linked_c5,
+  background = peaks.matched
+)
+
+# Generate rank plot for enriched motifs
+df <- data.frame(Vierstra.motifs.linked.5$motif.name, Vierstra.motifs.linked.5$pvalue)
+df$Vierstra.motifs.linked.5.pvalue<- -log10(df$Vierstra.motifs.linked.5.pvalue)
+df <- df[order(df$Vierstra.motifs.linked.5.pvalue, decreasing = TRUE),]
+df$rank <- seq_len(nrow(df))
+ggplot(df, aes(rank, Vierstra.motifs.linked.5.pvalue)) + geom_point(size = 1) 
+
+# MOTIF ANALYSIS ON E15 CORTEX SPOTS (RG referes to SOX2+ and N refers to SOX2-)
+cortex <- readRDS('/.../e15_ctx_subset.rds')
+DefaultAssay(cortex) <- 'peaks'
+cortex <- AddMotifs(
+  object = cortex,
+  genome = BSgenome.Mmusculus.UCSC.mm10,
+  pfm = Vierstra
+)
+
+# Obtain the top 500 peaks with largest fold change differences between SOX2+ and SOX2- spots
+RG_fc <- FoldChange(cortex, ident.1 = 'RGCTX', ident.2 = NULL)
+N_fc <- FoldChange(cortex, ident.1 = 'NCTX', ident.2 = NULL)
+
+top500.RG.peaks <- RG_fc %>% top_n(500, avg_log2FC)
+top500.RG.peaks <- rownames(top500.RG.peaks)
+top500.N.peaks <- N_fc %>% top_n(500, avg_log2FC)
+top500.N.peaks <- rownames(top500.N.peaks)
+
+# match the overall GC content in the peak set
+open.peaks <- AccessiblePeaks(cortex, idents = c("RGCTX", "NCTX"))
+meta.feature <- GetAssayData(cortex, assay = "peaks", slot = "meta.features")
+peaks.matched <- MatchRegionStats(
+  meta.feature = meta.feature[open.peaks, ],
+  query.feature = meta.feature[top500.RG.peaks, ],
+  n = 13000
+)
+enriched.motifs.RG.500 <- FindMotifs(
+  object = cortex,
+  features = top500.RG.peaks,
+  background = peaks.matched
+)
+
+open.peaks <- AccessiblePeaks(cortex, idents = c("RGCTX", "NCTX"))
+meta.feature <- GetAssayData(cortex, assay = "peaks", slot = "meta.features")
+peaks.matched <- MatchRegionStats(
+  meta.feature = meta.feature[open.peaks, ],
+  query.feature = meta.feature[top500.N.peaks, ],
+  n = 13000
+)
+enriched.motifs.N.500 <- FindMotifs(
+  object = cortex,
+  features = top500.N.peaks,
+  background = peaks.matched
+)
+
+df <- data.frame(enriched.motifs.RG.500$motif.name, enriched.motifs.RG.500$pvalue)
+df$enriched.motifs.RG.500.pvalue<- -log10(df$enriched.motifs.RG.500.pvalue)
+df <- df[order(df$enriched.motifs.RG.500.pvalue, decreasing = TRUE),]
+df$rank <- seq_len(nrow(df))
+ggplot(df, aes(rank, enriched.motifs.RG.500.pvalue)) + geom_point(size = 1) +
+  ggrepel::geom_label_repel(
+    data = df[rev(seq_len(90)), ], aes(x = rank, y = enriched.motifs.RG.500.pvalue, label = enriched.motifs.RG.500.motif.name), 
+    size = 1.5,
+    nudge_x = 2,
+    color = "black",
+    max.overlaps = 35
+  ) 
+
+df <- data.frame(enriched.motifs.N.500$motif.name, enriched.motifs.N.500$pvalue)
+df$enriched.motifs.N.500.pvalue<- -log10(df$enriched.motifs.N.500.pvalue)
+df <- df[order(df$enriched.motifs.N.500.pvalue, decreasing = TRUE),]
+df$rank <- seq_len(nrow(df))
+
+ggplot(df, aes(rank, enriched.motifs.N.500.pvalue)) + geom_point(size = 1) +
+  ggrepel::geom_label_repel(
+    data = df[rev(seq_len(90)), ], aes(x = rank, y = enriched.motifs.N.500.pvalue, label = enriched.motifs.N.500.motif.name), 
+    size = 1.5,
+    nudge_x = 2,
+    color = "black",
+    max.overlaps = 35
+  ) 
+
+### clustering concordance
 # compare clustering original vs dca
 DefaultAssay(combined) <- "dca"
 combined <- RunTFIDF(combined) %>%
