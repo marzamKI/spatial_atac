@@ -169,7 +169,7 @@ ggplot(top_go, aes(x=fct_term_name, y=log_p)) +
 # motif analysis
 # MOTIF ANALYSIS PER CLUSTER
 # Curated motif lists and archetypes were obtained from https://www.vierstra.org/resources/motif_clustering and RDS file downloaded from  https://jeffgranja.s3.amazonaws.com/ArchR/Annotations/Vierstra_Individual_Motifs.rds  or https://jeffgranja.s3.amazonaws.com/ArchR/Annotations/Vierstra_Archetype_Motifs_v2.1.rds
-Vierstra <- readRDS("/Users/enric.llorens/Downloads/Vierstra_Individual_Motifs.rds")
+Vierstra <- readRDS("meta/Vierstra_Individual_Motifs.rds")
 # add motif information
 DefaultAssay(combined) <- 'peaks'
 combined <- AddMotifs(
@@ -186,7 +186,7 @@ combined <- LinkPeaks(
   genes.use = rownames(da_genes_clust_01), min.distance = 1000
 )
 
-c5_genes <- read.csv2('/.../cl5_da_genes.csv', 
+c5_genes <- read.csv2('results/cl5_da_genes.csv', 
                       header = FALSE )$V1
 linked_c5 <- GetLinkedPeaks(combined, c5_genes, min.abs.score = 0.1, assay = 'peaks')
 
@@ -210,7 +210,7 @@ df$rank <- seq_len(nrow(df))
 ggplot(df, aes(rank, Vierstra.motifs.linked.5.pvalue)) + geom_point(size = 1) 
 
 # MOTIF ANALYSIS ON E15 CORTEX SPOTS (RG referes to SOX2+ and N refers to SOX2-)
-cortex <- readRDS('/.../e15_ctx_subset.rds')
+cortex <- readRDS('e15_ctx_subset.rds')
 DefaultAssay(cortex) <- 'peaks'
 cortex <- AddMotifs(
   object = cortex,

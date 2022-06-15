@@ -132,6 +132,7 @@ combined_e15 <- AddMetaData(
   col.name = "Pseudotime_e15")
 FeaturePlot(combined_e15, "Pseudotime_e15", cols = viridis(10, option = "magma"), split.by = "mode")
 
-
+saveRDS(cortex, "e15_ctx_subset.rds")
+saveRDS(combined_e15, "coembed_e15_atac_sc.rds")
 
 
