@@ -1,59 +1,41 @@
 #QC metrics 
 
 #ArchR
-# Load fragments file from Cell Ranger
-fragments_C1 <- '/.../fragments.tsv.gz'
-
-# Obtain tissue or region of interest barcodes from Loupe Browser
-aligned_bc_C1 <- read.csv2('/.../C1_barcodes.csv', 
-                           header = FALSE )$V1
-
-fragments_C2 <- '/.../fragments.tsv.gz'
-aligned_bc_C2 <- read.csv2('/.../C2_barcodes.csv', 
-                           header = FALSE )$V1
-fragments_D2 <- '/.../fragments.tsv.gz'
-aligned_bc_D2 <- read.csv2('/.../D2_barcodes.csv', 
-                           header = FALSE )$V1
-
-# Create arrow files per section
-D2T <- createArrowFiles(
-  inputFiles = fragments_D2,
-  sampleNames = 'D2T',
-  validBarcodes = aligned_bc_D2,
-  geneAnnotation = getGeneAnnotation(),
-  genomeAnnotation = getGenomeAnnotation(),
-  minTSS = 1,
-  minFrags = 100,
-  maxFrags = 1e+05,
+dirs <- list.dirs("data", recursive = F, full.names = F)
+table <- list()
+arrow <- list()
+for(i in dirs){
+  table[[i]] <- c(barcodes = paste0("meta/", i, "_tissue.tsv")$barcode,
+                  fragments = paste0("data/", i, "/outs/fragments.tsv.gz"))
   
-)
+  arrow[[i]] <- createArrowFiles(
+    inputFiles = table[[i]]$fragments,
+    sampleNames = i,
+    validBarcodes = table[[i]]$barcodes,
+    geneAnnotation = getGeneAnnotation(),
+    genomeAnnotation = getGenomeAnnotation(),
+    minTSS = 1,
+    minFrags = 100,
+    maxFrags = 1e+05,
+  )
+  
+  archr_obj[[i]] <- ArchRProject(
+    ArrowFiles = arrow[[i]], 
+    outputDirectory = "ArchR",
+    copyArrows = FALSE 
+  )
+  
+}
 
-# Create ArchR project 
+plots_tss <- list()
+plots_frag <- list()
+for(i in dirs){
+  plots_tss[[i]] <- plotTSSEnrichment(ArchRProj = archr_obj[[i]]) + ylim(0,8)
+  plots_frag[[i]] <- plotFragmentSizes(archr_obj[[i]]) + ylim(0,1)
+}
 
-C1T <- ArchRProject(
-  ArrowFiles = C1T, 
-  outputDirectory = "/.../ArchR",
-  copyArrows = FALSE 
-)
-
-C2T <- ArchRProject(
-  ArrowFiles = C2T, 
-  outputDirectory = "/.../ArchR",
-  copyArrows = FALSE 
-)
-
-D2T <- ArchRProject(
-  ArrowFiles = D2T, 
-  outputDirectory = "/.../ArchR",
-  copyArrows = FALSE 
-)
-
-plotTSSEnrichment(ArchRProj = C1T) + ylim(0,8)
-plotTSSEnrichment(ArchRProj = C2T) + ylim(0,8)
-plotTSSEnrichment(ArchRProj = D2T) + ylim(0,8)
-plotFragmentSizes(C1T) + ylim(0,1)
-plotFragmentSizes(C2T) + ylim(0,1)
-plotFragmentSizes(D2T) + ylim(0,1)
+ggarrange(plotlist = plots_tss)
+ggarrange(plotlist = plots_frag)
 
 
 # QC plots using signac
@@ -69,9 +51,9 @@ VlnPlot(embryo_den,c('tss_log'), pt.size = 0.01, group.by = 'cluster_ids') & sca
 
 
 # Combine with 10X snATACseq data, E18 brain
-counts <- Read10X_h5(filename = "/.../atac_v1_E18_brain_flash_5k_filtered_peak_bc_matrix.h5")
+counts <- Read10X_h5(filename = "data/atac_v1_E18_brain_flash_5k_filtered_peak_bc_matrix.h5")
 metadata <- read.csv(
-  file = "/.../atac_v1_E18_brain_flash_5k_singlecell.csv",
+  file = "data/atac_v1_E18_brain_flash_5k_singlecell.csv",
   header = TRUE,
   row.names = 1
 )
@@ -80,7 +62,7 @@ chrom_assay <- CreateChromatinAssay(
   counts = counts,
   sep = c(":", "-"),
   genome = 'mm10',
-  fragments = '/.../atac_v1_E18_brain_flash_5k_fragments.tsv.gz',
+  fragments = 'data/atac_v1_E18_brain_flash_5k_fragments.tsv.gz',
   min.cells = 1,
   min.features = 1
 )
