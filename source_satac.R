@@ -13,6 +13,9 @@ library(gprofiler2)
 library(loomR)
 library(SeuratWrappers)
 library(monocle3)
+library(ArchR)
+addArchRGenome("hg38")
+
 
 #spatial
 library(STutility)
