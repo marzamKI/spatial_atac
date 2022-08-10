@@ -1,6 +1,9 @@
-#QC metrics 
+source("source_satac.R")
 
-#ArchR
+# plot QC metrics (e.g., number of unique fragments, enrichment around TSS etc.)
+# compare also with snATAC - use 10X's public dataset of E18 mouse
+
+# create ArchR object to obtain TSS and fragment plots
 dirs <- list.dirs("data", recursive = F, full.names = F)
 table <- list()
 arrow <- list()
@@ -38,7 +41,7 @@ ggarrange(plotlist = plots_tss)
 ggarrange(plotlist = plots_frag)
 
 
-# QC plots using signac
+# QC plots using signac - mitochondrial content, percentage of fragments around TSS, unique fragments
 embryo_den$pct_mito <- embryo_den$mitochondrial / embryo_den$total 
 embryo_den$pct_TSS <- embryo_den$TSS_fragments / embryo_den$passed_filters 
 
@@ -49,8 +52,7 @@ embryo_den$tss_log <- log(embryo_den$TSS_fragments, base = 10)
 VlnPlot(embryo_den,c('unique_log'), pt.size = 0.01, group.by = 'cluster_ids') & scale_fill_manual(values = graf_bright_re1) & ylim(0,6)  
 VlnPlot(embryo_den,c('tss_log'), pt.size = 0.01, group.by = 'cluster_ids') & scale_fill_manual(values = graf_bright_re1) & ylim(0,6) 
 
-
-# Combine with 10X snATACseq data, E18 brain
+# Combine with 10X snATACseq data, E18 brain and compare metrics
 counts <- Read10X_h5(filename = "data/atac_v1_E18_brain_flash_5k_filtered_peak_bc_matrix.h5")
 metadata <- read.csv(
   file = "data/atac_v1_E18_brain_flash_5k_singlecell.csv",
@@ -84,7 +86,7 @@ E18_10X$tss_log <- log(E18_10X$TSS_fragments, base = 10)
 VlnPlot(E18_10X, c("unique_log")) + ylim(0,6) 
 VlnPlot(E18_10X, c("tss_log")) + ylim(0,6) 
 
-#distribution plots across sections
+# representation of clusters across sections
 df <- table(combined$section, combined$peaks_snn_res.0.7) %>% as.data.frame()
 prop_df <- prop.table(table(combined$section, combined$peaks_snn_res.0.7), 1) %>% as.data.frame()
 levels(prop_df$Var1) <- c("220403_C2", "220403_D2", "220403_A2","220403_B2","220327_A1", "220327_A2") %>% rev()

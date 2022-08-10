@@ -1,4 +1,8 @@
 # adapted from https://programmerah.com/the-sparse-matrix-of-r-language-is-too-large-to-be-used-as-matrix-8856/
+# allows to create very large matrices (as.matrix() will throw an error passed a certain size)
+#example usage:
+#mtx <- as_matrix(combined@assays$peaks@data)
+#write.csv(mtx, "combined_q0_peaks.csv")
 
 Rcpp::sourceCpp(code='
 #include <Rcpp.h>
@@ -41,7 +45,3 @@ as_matrix <- function(mat){
   colnames(tmp) <- mat@Dimnames[[2]]
   return(tmp)
 }
-
-#usage:
-#mtx <- as_matrix(combined@assays$peaks@data)
-#write.csv(mtx, "combined_q0_peaks.csv")

@@ -1,5 +1,6 @@
 source("source_satac.R")
-# visium integration
+
+# compare sATAC with visium
 
 #process all visium visiumctions
 infoTable <- data.frame(
@@ -49,21 +50,22 @@ visium$seurat_clusters_harmony <- visium$seurat_clusters
 saveRDS(visium, "visium_allages.rds")
 write.csv(visium@assays$RNA@counts, "visium_counts.csv")
 
-### denoivisium with DCA and default parameters ###
+### denoise visium with DCA and default parameters ###
 mtx <- read.table("visium_denoised/mean.tsv")
 colnames(mtx) <- gsub("\\.", "-", colnames(mtx))
 visium[["RNA_dca"]] <- CreateAssayObject(counts = as.matrix(mtx))
 rm(mtx)
 saveRDS(visium, "visium_denoised_rna.rds")
 
-#gene signature
 DefaultAssay(visium) <- "RNA"
 DefaultAssay(combined) <- "RNA"
 
 markers <- FindAllMarkers(combined, logfc.threshold = 0.2, only.pos = T)
 table(markers$cluster)
 
-#calculate signatures
+# calculate gene signatures for each cluster - 
+# first from sATAC and check scores on Visium, then from Visium and check scores on sATAC clusters
+# DEA followed by seurat's module score 
 genes_signatures <- list()
 for(i in 0:10){
   genes <- markers %>%
@@ -93,8 +95,7 @@ for(i in 1:11){
 }
 dev.off()
 
-#from visium
-#gene signature
+#gene signature from visium
 Idents(visium) <- "seurat_clusters_harmony"
 markers <- FindAllMarkers(visium, logfc.threshold = 0.2, only.pos = T)
 table(markers$cluster)
@@ -129,6 +130,7 @@ for(i in 1:12){
 }
 dev.off()
 
+# plot module score using dotplot
 levels(visium) <- c("3", "1", "2","4","8", "9", "6","0","5","10","11","7")
 signatures <- paste0("Visium_cluster",c("4","3","5","10", "9", "12","2","7","6","1","11", "8"))
 levels(combined) <- rev(c("5", "7", "2","9","3", "4", "8","0","1","10","6"))
@@ -137,7 +139,7 @@ signatures <- paste0("Cluster",c("6","8","3","1", "11", "2","4","5","9","10","7"
 DotPlot(visium, features = signatures, cols = c(magenta_scale[1], magenta_scale[8]))
 
 
-# clustering on DCA
+# perform clustering of visium data based on DCA and compare with original clustering
 DefaultAssay(visium) <- "RNA_dca"
 visium <- NormalizeData(visium) %>%
   FindVariableFeatures() %>%

@@ -1,13 +1,15 @@
 source("source_satac.R")
 
-#correlation peaks
+# calculate clusterwise correlation of accessibility
+# check both promoter and distal regions
+# use top 25% variable feature
 combined <- readRDS("combined_lsi_q0.rds")
 Idents(combined) <- "peaks_snn_res.0.7"
 combined <- RunTFIDF(combined) %>%
   FindTopFeatures(min.cutoff = 'q75') %>%
   RunSVD()
 
-# peaks in promoter regions vs distal elements
+# split peaks between promoter regions and distal elements
 DefaultAssay(combined) <- "peaks"
 annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Mmusculus.v79)
 seqlevelsStyle(annotations) <- 'UCSC'
@@ -18,14 +20,15 @@ tss.positions <- Extend(
   upstream = 1000,
   downstream = 100,
   from.midpoint = TRUE
-)
+) # obtain region around TSS
 
 closest_tss <- ClosestFeature(combined, rownames(combined), annotation = tss.positions)
-tss_peaks <- closest_tss %>% filter(distance == 0)
-distal_peaks <- closest_tss %>% filter(distance > 0)
+tss_peaks <- closest_tss %>% filter(distance == 0) # peaks falling within promoter region (between -1000 and +100 from TSS)
+distal_peaks <- closest_tss %>% filter(distance > 0) # peaks falling outise promoter region - assigned as distal
 
 col <- colorRampPalette(brewer.pal(10, "RdYlBu"))(256) %>% rev()
 
+# average accessibility signal cluster-wise and perform Spearman's correlation
 avg_tss <- AverageExpression(combined, assays = "peaks", slot = "data", features = intersect(tss_peaks$query_region, VariableFeatures(combined))) #12886 peaks
 cor_mat <- cor(avg_tss$peaks, method = "spearman")
 
@@ -36,6 +39,7 @@ heatmap.2(cor_mat, dendrogram="none", Rowv=FALSE, Colv=FALSE,
           ColSideColors = cols)
 dev.off()
 
+# repeat for distal elements
 avg_distal <- AverageExpression(combined, assays = "peaks", slot = "data", features = intersect(distal_peaks$query_region, VariableFeatures(combined))) #49768 features
 cor_mat <- cor(avg_distal$peaks, method = "spearman")
 
@@ -47,7 +51,7 @@ heatmap.2(cor_mat, dendrogram="none", Rowv=FALSE, Colv=FALSE,
 dev.off()
 
 
-
+# use STutility's NMFs to identify spatially correlated feature and perform spatially aware clustering 
 # nmf
 DefaultAssay(combined) <- "peaks"
 combined <- FindTopFeatures(combined, min.cutoff = "q75")
@@ -85,6 +89,7 @@ Idents(combined) <- "seurat_nmf_harmony"
 levels(combined) <- c("3", "2", "9", "5", "6", "1","0","8","7", "10", "4","11")
 combined$seurat_nmf_harmony <- Idents(combined)
 
+# compare clustering based on NMF as dim red with clustering based on LSI (spatial agnostic)
 prop <- prop.table(table(combined$peaks_id, combined$seurat_nmf_harmony), 1)*100
 heatmap(prop[order(nrow(prop):1),], 
         Colv = NA, Rowv = NA, scale="none", 
@@ -96,7 +101,7 @@ p1 <- ST.FeaturePlot(combined, "ident", indices = c("1", "3", "5"), ncol = 3, co
 p2 <- ST.FeaturePlot(combined, "seurat_nmf_harmony", indices = c("1", "3", "5"), ncol = 3, cols = cols_nmf)
 p1+p2
 
-## weights peaks 
+## plot top scoring features for each NMF factor
 top_20 <- list()
 for(i in c(2,4,5,7)){
   ftr <- paste0("factor_", i)
@@ -119,9 +124,10 @@ p1+p2+p3+p4
 
 
 
-## Gene ontology
+## Gene ontology analysis on the gene activities
 DefaultAssay(combined) <- "RNA"
-markers <- FindAllMarkers(combined, only.pos = T, logfc.threshold = 0.1, min.pct = 0.05)
+markers <- FindAllMarkers(combined, only.pos = T, logfc.threshold = 0.1, min.pct = 0.05) %>%
+  filter(p_val_adj < 0.05)
 
 ST.FeaturePlot(combined, "ident", indices = 6, split.labels = T, ncol = 3)
 my_levels <- c("5", "7", "2","9","3", "4", "8","0","1","10","6")
@@ -138,11 +144,11 @@ for(i in my_levels){
   
   go[[i]] <- gostres$result
 }
-
 go_df <- do.call(rbind, go)
-
 table(go_df[go_df$source == "GO:BP", colnames(go_df) == "cluster"])
 
+# plot top GO terms for each cluster
+# filter out general terms (based on the number of genes assigned to the GO hit)
 top_go <- go_df %>% 
   filter(source == "GO:BP") %>%
   filter(term_size < 2927) %>% #mean term size - to avoid very general terms
@@ -152,7 +158,7 @@ top_go <- go_df %>%
 top_go$fct_term_name <- paste0(top_go$cluster, "_", top_go$term_name)
 top_go$fct_term_name <- factor(top_go$fct_term_name, levels = top_go$fct_term_name)
 
-# Lollipop - horizontal version
+# plot top GO terms in Lollipop (horizontal version)
 ggplot(top_go, aes(x=fct_term_name, y=log_p)) +
   geom_segment( aes(x=fct_term_name, xend=fct_term_name, y=0, yend=log_p, color = cluster)) +
   geom_point( size=2, alpha=1, aes(color = cluster)) +
@@ -166,7 +172,6 @@ ggplot(top_go, aes(x=fct_term_name, y=log_p)) +
   ) +
   NoLegend()
 
-# motif analysis
 # MOTIF ANALYSIS PER CLUSTER
 # Curated motif lists and archetypes were obtained from https://www.vierstra.org/resources/motif_clustering and RDS file downloaded from  https://jeffgranja.s3.amazonaws.com/ArchR/Annotations/Vierstra_Individual_Motifs.rds  or https://jeffgranja.s3.amazonaws.com/ArchR/Annotations/Vierstra_Archetype_Motifs_v2.1.rds
 Vierstra <- readRDS("meta/Vierstra_Individual_Motifs.rds")
@@ -209,7 +214,7 @@ df <- df[order(df$Vierstra.motifs.linked.5.pvalue, decreasing = TRUE),]
 df$rank <- seq_len(nrow(df))
 ggplot(df, aes(rank, Vierstra.motifs.linked.5.pvalue)) + geom_point(size = 1) 
 
-# MOTIF ANALYSIS ON E15 CORTEX SPOTS (RG referes to SOX2+ and N refers to SOX2-)
+# MOTIF ANALYSIS ON E15 CORTEX SPOTS (RG refers to SOX2+ and N refers to SOX2-)
 cortex <- readRDS('e15_ctx_subset.rds')
 DefaultAssay(cortex) <- 'peaks'
 cortex <- AddMotifs(
@@ -318,6 +323,7 @@ heatmap.2(prop[order(nrow(prop):1),],
           xlab="peaks cluster", ylab="dca clusters", 
           col = hm_colors, RowSideColors=rev(cols_dca), ColSideColors = cols)
 
+# plot examples of peaks before and after denoising
 #forebrain
 DefaultAssay(combined) <- "peaks"
 p1 <- ST.FeaturePlot(combined, "chr3-88205246-88207924", ncol = 2, pt.size = 0.7, cols = magenta_scale, max.cutoff = "q95")
