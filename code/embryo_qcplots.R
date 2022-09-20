@@ -184,5 +184,78 @@ heatmap.2(prop[order(nrow(prop):1),],
 
 
 
+## compare metrics with other spatial ATAC method (Deng et al.)
+#https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE171943
+
+# make new matrices with encode peaks
+# load peaks
+path_frag <- "~/Documents/sequencing/sATAC/Deng/GSE171943_RAW/embryo/fragments/"
+fragments <- list.files(path_frag, pattern = "\\.tsv.gz$")
+
+object <- list()
+# create common peak set
+for(i in seq_along(fragments)){
+  frag_name = strsplit(fragments[i], ".fragments.tsv.gz") %>% unlist()
+  
+  # create fragment objects
+  object$frag[[frag_name]] <- CreateFragmentObject(
+    path = paste0(path_frag, fragments[i])
+  )
+  
+  # make count matrix
+  object$counts[[frag_name]] <- FeatureMatrix(
+    fragments = object$frag[[frag_name]],
+    features = gr
+  )
+}
+
+# figure out number of unique fragments - 
+# do all versions - even those without the spatial file (some spots won't be on tissue tho)
+object_nospatial <- list()
+for(i in seq_along(fragments)){
+  frag_name = strsplit(fragments[i], ".fragments.tsv.gz") %>% unlist()
+  
+  frag <- read.table(paste0(path_frag, fragments[i]))
+  passed_filters <- table(frag[,4]) %>% as.data.frame()
+  colnames(passed_filters) <- c("barcode", "passed_filter")
+  total <- aggregate(frag$V5, by=list(barcode=frag$V4), FUN=sum)
+  colnames(total) <- c("barcode", "total")
+  md <- merge(passed_filters, total, by = "barcode")
+  rownames(md) <- md$barcode
+  
+  object_nospatial$md[[frag_name]] <- md
+  
+  chrom_assay <- CreateChromatinAssay(
+    counts = object$counts[[frag_name]],
+    sep = c(":", "-"),
+    genome = 'mm10',
+    fragments = object$frag[[frag_name]]
+  )
+  
+  object_nospatial$obj[[frag_name]] <- CreateSeuratObject(
+    counts = chrom_assay,
+    assay = "peaks_",
+    meta.data = object_nospatial$md[[frag_name]][colnames(chrom_assay),])
+  
+  object_nospatial$obj[[frag_name]]$sample <- frag_name
+
+  sig_obj <- object_nospatial$obj[[frag_name]] %>%
+    RenameCells(new.names = paste0(colnames(sig_obj), "_", frag_name))
+  object_nospatial$obj[[frag_name]] <- sig_obj
+}
+
+satac <- merge(object_nospatial$obj$GSM5238385_ME11_50um, 
+               y = object_nospatial$obj[!names(object_nospatial$obj) %in% "GSM5238385_ME11_50um"] )
+satac$logunique <- log10(satac$passed_filter)
+satac$passed_filters <- satac$passed_filter
+
+Idents(satac) <- "V2"
+satac <- subset(satac, ident = "1")
+satac_all <- merge(combined, satac)
+satac_all$logunique <- log10(satac_all$passed_filters)
+VlnPlot(satac_all, "logunique", group.by = "sample", pt.size = 0) + NoLegend()
+
+
+
 
 
