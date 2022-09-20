@@ -1,5 +1,229 @@
-#
+# integration with snATAC-seq and scRNA-seq
 source("source_satac.R")
+
+# scATAC-seq (generated in the lab)
+# load ENCODE peaks
+gr_12 <- read.table(
+  file = paste0(path, "E12_peaks_ALL.bed"),
+  col.names = c("chr", "start", "end")
+) %>% makeGRangesFromDataFrame()
+
+gr_13 <- read.table(
+  file = paste0(path, "ALL_E13_PEAKS.bed"),
+  col.names = c("chr", "start", "end")
+) %>% makeGRangesFromDataFrame()
+
+gr_15 <- read.table(
+  file = paste0(path, "E15_ALL.bed"),
+  col.names = c("chr", "start", "end")
+) %>% makeGRangesFromDataFrame()
+
+gr <- GenomicRanges::reduce(c(gr_12, gr_13, gr_15)) 
+rm(gr_12, gr_13, gr_15)
+
+# load fragments and metadata files
+setwd("~/Documents/sequencing/snatac2208/")
+fragments <- list.files(pattern = "\\.tsv.gz$")
+singlecell <- list.files(pattern = "\\.csv$")
+
+object <- list()
+# create objects with common peak set
+for(i in seq_along(fragments)){
+  frag_name = strsplit(fragments[i], "_fragments.tsv.gz") %>% unlist()
+  
+  # load metadata
+  object$md[[frag_name]] <- read.table(
+    file = singlecell[i],
+    stringsAsFactors = FALSE,
+    sep = ",",
+    header = TRUE,
+    row.names = 1
+  )[-1, ] %>%
+    filter(is__cell_barcode == 1)
+  
+  # create fragment objects
+  object$frag[[frag_name]] <- CreateFragmentObject(
+    path = fragments[i],
+    cells = rownames(object$md[[frag_name]])
+  )
+  
+  # make count matrix
+  object$counts[[frag_name]] <- FeatureMatrix(
+    fragments = object$frag[[frag_name]],
+    features = gr,
+    cells = rownames(object$md[[frag_name]])
+  )
+  
+  chrom_assay <- CreateChromatinAssay(
+    counts = object$counts[[frag_name]],
+    sep = c(":", "-"),
+    genome = 'mm10',
+    fragments = object$frag[[frag_name]]
+  )
+  
+  object$obj[[frag_name]] <- CreateSeuratObject(
+    counts = chrom_assay,
+    assay = "peaks",
+    meta.data = object$md[[frag_name]])
+  
+  object$obj[[frag_name]]$sample <- frag_name
+  
+}
+
+# merge in unique object
+snatac <- merge(object$obj$e12,
+                c(object$obj$e13, object$obj$e15))
+
+snatac$logunique <- log10(snatac$passed_filters) # log #unique fragments
+#normalize, dim red, clustering
+snatac <- snatac %>% 
+  RunTFIDF() %>%
+  FindTopFeatures(min.cutoff = 'q0') %>%
+  RunSVD() %>%
+  RunUMAP(reduction = 'lsi', dims = 1:10) %>%
+  FindNeighbors(reduction = 'lsi', dims = 1:10) %>%
+  FindClusters(algorithm = 3, resolution = 0.7)
+
+# integrate with sATAC
+satac <- readRDS("combined_lsi_q0.rds")
+
+# integrate sATAC and scRNA datasets with seurat's CCA strategy
+satac$mode <- "sATAC"
+snatac$mode <- "snATAC"
+
+DefaultAssay(satac) <- "peaks"
+DefaultAssay(snatac) <- "peaks"
+
+# find integration anchors
+integration.anchors <- FindIntegrationAnchors(
+  object.list = list(satac, snatac),
+  anchor.features = rownames(satac),
+  reduction = "rlsi",
+  dims = 1:10
+)
+
+# merge
+combined <- merge(satac, snatac) %>%
+  FindTopFeatures(min.cutoff = 10)%>%
+  RunTFIDF() %>%
+  RunSVD() %>%
+  RunUMAP(reduction = "lsi", dims = 1:10)
+
+# integrate LSI embeddings
+integrated <- IntegrateEmbeddings(
+  anchorset = integration.anchors,
+  reductions = combined[["lsi"]],
+  new.reduction.name = "integrated_lsi",
+  dims.to.integrate = 1:10
+)
+
+# create a new UMAP using the integrated embeddings
+integrated <- integrated %>%
+  RunHarmony(group.by.vars = "sample", 
+             reduction = "integrated_lsi", dims.use = 1:10, 
+             assay.use = "peaks", 
+             project.dim = F,
+             verbose = T) %>%
+  RunUMAP(reduction = "harmony", dims = 1:10, reduction.name = "umap.harmony") 
+
+# cluster integrated data on umap
+DefaultAssay(integrated) <- "peaks"
+integrated <- integrated %>% 
+  FindNeighbors(reduction = "umap.harmony", dims = 1:2) %>%
+  FindClusters(resolution = 0.1, algorithm = 1)
+
+integrated$integrated_harmony <- Idents(integrated)
+integrated$cluster_mode <- paste0(integrated$integrated_harmony, 
+                                  "_",
+                                  integrated$mode)
+
+# log normalize peaks data for correlation plots
+Idents(integrated) <- "cluster_mode"
+integrated[["peaks_lognorm"]] <- integrated[["peaks"]]
+
+DefaultAssay(integrated) <- "peaks_lognorm"
+integrated <- NormalizeData(integrated)
+
+# calculate gene activity in the integrated object
+annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Mmusculus.v79)
+seqlevelsStyle(annotations) <- 'UCSC'
+Annotation(integrated) <- annotations
+gene.activities <- GeneActivity(integrated)
+integrated[['RNA']] <- CreateAssayObject(counts = gene.activities)
+integrated <- NormalizeData(
+  object = integrated,
+  assay = 'RNA',
+  normalization.method = 'LogNormalize',
+  scale.factor = median(integrated$nCount_RNA)
+)
+
+# make average expression object for peaks and RNA assays to compare signal across modalities
+avg_cl_mode <- AverageExpression(integrated, return.seurat = T)
+
+df_rna <- avg_cl_mode@assays$RNA@data %>% 
+  as.data.frame()
+cor_rna <- cor(df_rna, method = "spearman")
+
+df_peaks <- avg_cl_mode@assays$peaks@data %>% 
+  as.data.frame()
+cor_peaks <- cor(df_peaks, method = "spearman")
+
+# make scatterplots
+cl_order <- c("5", "9", "13", "2", #cns
+              "0", "11", "3", "10", #pns
+              "1", "4", "19", "8", "16", "12", # face
+              "14", "17", # olfactory
+              "6", # muscle
+              "7", "15", "18") # liver
+
+plots <- list()
+for(i in cl_order){
+  satac_cl <- paste0(i, "_sATAC")
+  snatac_cl <- paste0(i, "_snATAC")
+  name <- as.character(i)
+  plots[[name]] <-
+    ggplot(df_peaks, aes_(as.name(satac_cl), as.name(snatac_cl))) +
+    scattermore::geom_scattermore(pointsize = 2, alpha = 0.4) + xlab(satac_cl) + ylab(snatac_cl) + theme_bw() +
+    annotate("text", y = 2, x = 2, 
+             label = round(cor(df_peaks[satac_cl], df_peaks[snatac_cl],method = "spearman"), digits = 4)) + theme_bw()
+  
+}
+
+ggpubr::ggarrange(plotlist = plots, ncol = 5, nrow = 4)
+
+
+# do heatmap with top differentially accessible genes
+DefaultAssay(integrated) <- "RNA"
+markers_top <- FindAllMarkers(integrated, only.pos = T, logfc.threshold = 0.2, min.pct = 0.05) %>%
+  filter(p_val_adj < 0.05) %>%
+  group_by(cluster) %>%
+  arrange(desc(avg_log2FC), .by_group = T) %>%
+  arrange(factor(cluster, levels = cl_order))
+
+cl_order_subset <- c("5", "9", "13", "2", "0", "3", "10", "1", "4", "8",
+                     "14", "6",  "7",  "15", "18")
+my_levels <- paste0(rep(cl_order_subset, each = 2), c("_sATAC", "_snATAC"))
+
+Idents(integrated) <- "mode"
+integrated_subset <- subset(integrated, idents = "sATAC", invert = F)
+Idents(integrated_subset) <- "integrated_harmony"
+avg_subset <- AverageExpression(integrated_subset, return.seurat = T, assays = "RNA")
+levels(avg_subset) <- cl_order
+avg_subset <- ScaleData(avg_subset, features = rownames(avg_subset))
+p1 <- DoHeatmap(avg_subset, markers_top$gene, draw.lines = F, slot = "scale.data") +
+  scale_fill_viridis(option = "magma")
+
+Idents(integrated) <- "mode"
+integrated_subset <- subset(integrated, idents = "sATAC", invert = T)
+Idents(integrated_subset) <- "integrated_harmony"
+avg_subset <- AverageExpression(integrated_subset, return.seurat = T, assays = "RNA")
+levels(avg_subset) <- cl_order
+avg_subset <- ScaleData(avg_subset, features = rownames(avg_subset))
+p2 <- DoHeatmap(avg_subset, markers_top$gene, draw.lines = F, slot = "scale.data") +
+  scale_fill_viridis(option = "magma")
+p1 | p2
+
+
 
 #scRNAseq from http://mousebrain.org/development/downloads.html
 #sc preprocessing
