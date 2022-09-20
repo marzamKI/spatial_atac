@@ -225,6 +225,150 @@ p1 | p2
 
 
 
+# ENCODE snATAC-seq dataset of forebrain (Preissl et al.)
+setwd("~/Documents/sequencing/preissl")
+fragments <- list.files(pattern = "\\.tsv.gz$")
+
+object <- list()
+# create common peak set
+for(i in seq_along(fragments)){
+  frag_name = strsplit(fragments[i], "_fragments.tsv.gz") %>% unlist()
+  
+  # create fragment objects
+  object$frag[[frag_name]] <- CreateFragmentObject(
+    path = fragments[i]
+  )
+  
+  # make count matrix
+  object$counts[[frag_name]] <- FeatureMatrix(
+    fragments = object$frag[[frag_name]],
+    features = gr
+  )
+  
+  # figure out number of unique fragments - 
+  # should be able to count how many times each spot barcode occurs in the fragment file
+  frag <- read.table(fragments[i])
+  passed_filters <- table(frag[,4]) %>% as.data.frame()
+  colnames(passed_filters) <- c("barcode", "passed_filter")
+  total <- aggregate(frag$V5, by=list(barcode=frag$V4), FUN=sum)
+  colnames(total) <- c("barcode", "total")
+  md <- merge(passed_filters, total, by = "barcode")
+  rownames(md) <- md$barcode
+  
+  object$md[[frag_name]] <- md
+}
+
+fragments_rep <- c("e15.5_rep1", "e15.5_rep2",
+                   "e12.5_rep1", "e12.5_rep2",
+                   "e13.5_rep1", "e13.5_rep2")
+fragments_df <- data.frame(x = fragments,
+                           y = fragments_rep)
+
+for(i in seq_along(fragments)){
+  frag_name = strsplit(fragments[i], "_fragments.tsv.gz") %>% unlist()
+  rownames(object$md[[frag_name]]) <- object$md[[frag_name]]$barcode
+  
+  chrom_assay <- CreateChromatinAssay(
+    counts = object$counts[[frag_name]],
+    sep = c(":", "-"),
+    genome = 'mm10',
+    fragments = object$frag[[frag_name]]
+  )
+  
+  object$obj[[frag_name]] <- CreateSeuratObject(
+    counts = chrom_assay,
+    assay = "peaks",
+    meta.data = object$md[[frag_name]])
+  
+  object$obj[[frag_name]]$sample <- frag_name
+  object$obj[[frag_name]] <- RenameCells(object$obj[[frag_name]], fragments_df[i,2])
+}
+
+#merge objects and remove columns that are not listed as cells in xgi file
+snatac <- merge(object$obj$ENCSR374QZJ_1_15.5, 
+                y = object$obj[!names(object$obj) %in% "ENCSR374QZJ_1_15.5"] )
+
+e12_cells <- read.table("GSE100033_Preissl/GSM2668118_e12.5.nchrM.merge.sel_cell.xgi.txt.gz")
+e13_cells <- read.table("GSE100033_Preissl/GSM2668119_e13.5.nchrM.merge.sel_cell.xgi.txt.gz")
+e15_cells <- read.table("GSE100033_Preissl/GSM2668121_e15.5.nchrM.merge.sel_cell.xgi.txt.gz")
+
+snatac <- subset(snatac, cells = c(e12_cells$V1, e13_cells$V1, e15_cells$V1))
+snatac$logunique <- log10(snatac$passed_filter)
+
+
+#subset satac dataset to only contain forebrain spots (manually selected)
+meta <- list()
+cells <- NULL
+fb_spots <- list.files("meta/")
+for(i in seq_along(fb_spots)){
+  meta[[i]] <- read.table(paste0("meta/",fb_spots[i]))
+  meta[[i]]$barcode <- paste0(meta[[i]]$barcode, "-1_", i)
+  cells <- c(cells, meta[[i]]$barcode)
+}
+
+satac <- SubsetSTData(satac, spots = cells)
+
+# integrate sATAC and scRNA datasets with seurat's CCA strategy
+satac$mode <- "sATAC"
+snatac$mode <- "snATAC"
+
+DefaultAssay(satac) <- "peaks"
+DefaultAssay(snatac) <- "peaks"
+
+# find integration anchors
+integration.anchors <- FindIntegrationAnchors(
+  object.list = list(satac, snatac),
+  anchor.features = rownames(satac),
+  reduction = "rlsi",
+  dims = 1:15
+)
+
+# merge
+combined <- merge(satac, snatac)
+
+# integrate LSI embeddings
+integrated <- IntegrateEmbeddings(
+  anchorset = integration.anchors,
+  reductions = combined[["lsi"]],
+  new.reduction.name = "integrated_lsi",
+  dims.to.integrate = 1:15
+)
+
+# create a new UMAP using the integrated embeddings
+integrated <- integrated %>%
+  RunHarmony(group.by.vars = "sample", 
+             reduction = "integrated_lsi", dims.use = 1:15, 
+             assay.use = "peaks", 
+             project.dim = F,
+             verbose = T) %>%
+  RunUMAP(reduction = "harmony", dims = 1:15, reduction.name = "umap.harmony") %>%
+  FindNeighbors(reduction = "harmony", dims = 1:15) %>%
+  FindClusters(resolution = 0.1)
+integrated$integrated_harmony <- Idents(integrated)
+
+# find transfer anchors
+transfer.anchors <- FindTransferAnchors(
+  reference = snatac,
+  query = satac,
+  reference.reduction = "lsi", 
+  reduction = "lsiproject",
+  dims = 1:15
+)
+
+snatac$query_clusters <- Idents(snatac)
+predictions <- TransferData(
+  anchorset = transfer.anchors, 
+  refdata = snatac$query_clusters,
+  weight.reduction = "lsiproject",
+  dims = 1:15
+)
+
+satac <- AddMetaData(
+  object = satac,
+  metadata = predictions
+)
+
+
 #scRNAseq from http://mousebrain.org/development/downloads.html
 #sc preprocessing
 lfile <- connect(filename = "~/Downloads/dev_all.loom", mode = "r+", skip.validate = TRUE)
