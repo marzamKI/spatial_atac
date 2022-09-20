@@ -102,6 +102,87 @@ ggplot(prop_df, aes(fill=Var2, y=Freq, x=Var1)) +
 dev.off()
 
 
+# peak calling and genome binning
+DefaultAssay(combined) <- "peaks"
+
+# call peaks on the merged dataset using MACS2
+peaks_all <- CallPeaks(
+  object = combined,
+  macs2.path = "~/opt/anaconda3/envs/atac_env/bin/macs2"
+)
+
+# check overlap between peaks called with MACS2 and ENCODE peaks
+overlap <- findOverlaps(combined@assays$peaks@ranges, peaks_all)
+overlaps <- findOverlaps(peaks_all, combined@assays$peaks@ranges, select = "arbitrary") 
+table(is.na(overlaps))
+
+# create feature matrices with MACS2 peaks
+object <- list()
+for(i in seq_along(new.path)){
+  object$frag[[i]] <- CreateFragmentObject(new.path[i])
+  
+  object$counts_macs[[i]] <- FeatureMatrix(
+    object$frag[[i]],
+    peaks_all,
+    verbose = TRUE
+  )
+  
+  object$assay_macs[[i]] <- CreateChromatinAssay(object$counts_macs[[i]], 
+                                                 fragments = object$frag[[i]])
+  
+  object$signac_macs[[i]] <- CreateSeuratObject(object$assay_macs[[i]], 
+                                                assay = "peaks")
+  
+  object$signac_macs[[i]]$sample <- i
+  
+}
+
+# merge objects and process data same way as before
+combined_macs <- merge(object$signac_macs[[1]], c(object$signac_macs[[2]],
+                                                  object$signac_macs[[3]],
+                                                  object$signac_macs[[4]],
+                                                  object$signac_macs[[5]],
+                                                  object$signac_macs[[6]]))
+
+combined_macs <- subset(combined_macs, cells = colnames(combined))
+combined_macs@tools <- combined@tools
+ST.FeaturePlot(combined_macs, "nCount_peaks")
+
+combined_macs <- combined_macs %>%
+  RunTFIDF() %>%
+  FindTopFeatures(min.cutoff = 'q0') %>%
+  RunSVD() %>% 
+  RunHarmony(group.by.vars = "sample", 
+             reduction = "lsi", dims.use = 1:7, 
+             assay.use = "peaks", 
+             project.dim = F,
+             verbose = T) %>%
+  RunUMAP(reduction = "harmony", dims = 1:7, reduction.name = "umap.harmony") %>%
+  FindNeighbors(reduction = "harmony", dims = 1:7) %>%
+  FindClusters(resolution = 0.7)
+combined_macs$seurat_clusters_harmony <- combined_macs$seurat_clusters
+levels(combined) <- c("5", "7", "2","9","3", "4", "8","0","1","10","6")
+cols <-  c("#4477AA","#58AAD2","#58BEC8", "#2F9558","#669C39","#CCBB44", "#A8A8A8","#E05B77","#B73D77", "#B06992","#E08762") #embryo clusters res 0.7
+cols_macs <- c("#4477AA","#58AAD2","#669C39", "#2F9558","#CCBB44", "#A8A8A8","#E05B77","#B73D77","#B27699", "#B06992","#E08762")
+
+Idents(combined_macs) <- "seurat_clusters_harmony"
+levels(combined_macs) <- c("4", "1", "2","3","6", "7", "9","0","5","10","8")
+
+# compare clusters obtained with MACS2 and ENCODE peaks
+p1 <- ST.FeaturePlot(combined_macs, "ident", ncol = 2, pt.size = 0.7, cols = cols_macs) +
+  ggtitle("MACS2 peaks")
+p2 <- ST.FeaturePlot(combined, "ident", ncol = 2, pt.size = 0.7, cols = cols) +
+  ggtitle("ENCODE peaks")
+ggpubr::ggarrange(p1, p2)
+
+combined <- AddMetaData(combined, combined_macs@active.ident, col.name = "macs_cl")
+prop <- prop.table(table(combined@active.ident, combined$macs_cl), 1)*100
+heatmap.2(prop[order(nrow(prop):1),], 
+          Colv = NA, Rowv = NA, scale="none", 
+          xlab="peaks cluster", ylab="dca clusters", 
+          col = hm_colors, RowSideColors=rev(cols), ColSideColors = cols_macs)
+
+
 
 
 
