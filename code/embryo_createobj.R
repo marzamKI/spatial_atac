@@ -1,9 +1,10 @@
 source("source_satac.R")
 
-# set paths
+# set paths to raw data and metadata
 dirs <- list.dirs("data", recursive = F, full.names = F)
 table <- list()
 
+# create a table containing paths to raw and meta data (i.e., output from cellranger + spatial info)
 for(i in dirs){
   table[[i]] <- c(samples = paste0("data/", i, "/outs/raw_peak_bc_matrix.h5"),
                   singlecell = paste0("data/", i, "/outs/singlecell.csv"),
@@ -18,8 +19,9 @@ object <- list(md = list(),
                frag = list(),
                counts = list())
 
-# make new matrices with encode peaks
-# load peaks
+# build new matrices with new peak set
+# peaks obtained from https://www.science.org/doi/10.1126/science.aav1898
+# load peaks and create genomicranges object
 gr_12 <- read.table(
   file = "E12_peaks_ALL.bed",
   col.names = c("chr", "start", "end")
@@ -37,7 +39,7 @@ gr_15 <- read.table(
 
 gr <- GenomicRanges::reduce(c(gr_12, gr_13, gr_15)) 
 
-# create common peak set
+# create fragment objects and count matrices for each section separately
 for(i in seq_along(dirs)){
   folder = strsplit(infoTable$samples[i], "raw_peak_bc_matrix.h5") %>% unlist()
   # load metadata
@@ -47,7 +49,7 @@ for(i in seq_along(dirs)){
     sep = ",",
     header = TRUE,
     row.names = 1
-  )[-1, ] # remove the first row
+  )[-1, ] # remove the first row (NO_BARCODE)
   
   # create fragment objects
   object$frag[[i]] <- CreateFragmentObject(
@@ -75,9 +77,10 @@ for(i in seq_along(dirs)){
   
 }
 
+# save unmerged objects and metadata
 saveRDS(object, "data/embryo_unmerged.rds")
 
-# make tissue files
+# make tissue position files
 for(i in seq_along(dirs)){
   spotfile <- read.table(infoTable$tissue_paths[i], sep = "\t", header = T)
   
@@ -91,6 +94,7 @@ for(i in seq_along(dirs)){
   spotfile_tissue <- cbind(tissue, spotfile_tissue)
   rownames(spotfile_tissue) <- paste0(spotfile$barcode, "-1")
   
+  # save new tissue position file with the correct columns for creating STutility object
   write.csv(spotfile_tissue, 
             paste0(strsplit(infoTable$tissue_paths[i], "tsv"), "csv"))
   
@@ -107,6 +111,7 @@ for(i in seq_along(dirs)){
   
   mtx <- object$counts[[i]]
   mtx <- mtx[,colnames(mtx) %in% spotfile$barcode]
+  # filter count matrix to retain only spots overlaying tissue
   
   object$mtx[[i]] <- mtx
   
@@ -116,6 +121,7 @@ for(i in seq_along(dirs)){
 
 signac_object <- list()
 
+# create signac objects for each section and run normalization and dimensionality reduction
 for(i in seq_along(dirs)){
   assay <- CreateChromatinAssay(object$mtx[[i]], 
                                 fragments = object$frag[[i]])
@@ -150,6 +156,8 @@ for(i in 1:length(dirs)){
 tissue_md_combined <- do.call("rbind", tissue_md) 
 combined <- AddMetaData(combined, tissue_md_combined)
 
+# add image
+# image is manually cropped so that it only shows the capture area
 table <- list()
 for(i in dirs){
   table[[i]] <- c(samples = paste0("data/", i, "/outs/encode_peak_bc_matrix_gr12_13_15.h5"),
@@ -200,6 +208,8 @@ combined$seurat_clusters_harmony <- combined$seurat_clusters
 
 # create matrix for DCA
 mtx <- as_matrix(combined@assays$peaks@data)
+
+#save matrix for denoising
 write.csv(mtx, "combined_q0_peaks.csv")
 
 #run dca on terminal
@@ -217,6 +227,9 @@ write.csv(mtx, "combined_q0_peaks.csv")
 denoised_counts <- read.table("dca_peaks_q0/mean.tsv", row.names = 1) %>% 
   as.matrix()
 colnames(denoised_counts) <- sub("\\.", "-", colnames(denoised_counts))
+
+# add denoised matrix to object
+# filter to retain same spots and features
 combined[["dca"]] <- combined[["peaks"]]
 combined@assays$dca@data <- denoised_counts
 combined@assays$dca@counts <- combined@assays$dca@counts[rownames(combined@assays$dca@counts) %in%
@@ -236,6 +249,9 @@ genes <- rownames(gene.activities)
 genes_filter <- c(grep("Pcdh", genes), grep("PCDH", genes), 
                   grep("UGT", genes), grep("Ugt", genes))
 gene.activities_filtered <- gene.activities[-genes_filter,]
+
+# add the gene activity matrix to the Seurat object as a new assay and normalize it
+#remove PCDH and UGT genes
 combined[['RNA']] <- CreateAssayObject(counts = gene.activities_filtered) %>%
   NormalizeData(assay = 'RNA', normalization.method = 'LogNormalize')
 

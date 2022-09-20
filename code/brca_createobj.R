@@ -1,9 +1,10 @@
 source("source_satac.R")
 
-# set paths
+# set paths to raw data and metadata
 dirs <- list.dirs("data/brca", recursive = F, full.names = F)
 table <- list()
 
+# create a table containing paths to raw and meta data (i.e., output from cellranger + spatial info)
 for(i in dirs){
   table[[i]] <- c(samples = paste0("data/brca/", i, "/raw_peak_bc_matrix.h5"),
                   singlecell = paste0("data/brca/", i, "/singlecell.csv"),
@@ -12,7 +13,6 @@ for(i in dirs){
                   spotfiles = paste0("meta/", i, "_tissue.csv"))
 }
 
-
 infoTable <- do.call("rbind", table) %>% as.data.frame()
 
 object <- list(md = list(),
@@ -20,14 +20,16 @@ object <- list(md = list(),
                counts = list())
 
 
-# make new matrices with encode peaks
-# load peaks
+# build new matrices with new peak set
+# peaks obtained from https://www.science.org/doi/10.1126/science.aav1898
+# load peaks and create genomicranges object
 gr <- read.csv(
   file = "BRCA_peakCalls.csv",
   col.names = c("chr", "start", "end"),
   sep = ";"
 ) %>% makeGRangesFromDataFrame()
 
+# create fragment objects and count matrices for each section separately
 for(i in seq_along(dirs)){
   folder = strsplit(infoTable$samples[i], "raw_peak_bc_matrix.h5") %>% unlist()
   # load metadata
@@ -37,7 +39,7 @@ for(i in seq_along(dirs)){
     sep = ",",
     header = TRUE,
     row.names = 1
-  )[-1, ] # remove the first row
+  )[-1, ] # remove the first row (NO_BARCODE)
   
   # create fragment objects
   object$frag[[i]] <- CreateFragmentObject(
@@ -60,14 +62,15 @@ for(i in seq_along(dirs)){
     
     write10xCounts(path = paste0(folder, "brca_peak_bc_matrix.h5"),
                    x = object$counts[[i]],
-                   type = "HDF5")
+                   type = "HDF5") # save new count matrix
   }
   
 }
+
+# save unmerged objects and metadata
 saveRDS(object, "data/brca/brca_unmerged.rds")
 
-
-# make tissue files
+# make tissue position files
 for(i in seq_along(infoTable$tissue_paths)){
   spotfile <- read.table(infoTable$tissue_paths[i], sep = "\t", header = T)
   
@@ -81,6 +84,7 @@ for(i in seq_along(infoTable$tissue_paths)){
   spotfile_tissue <- cbind(tissue, spotfile_tissue)
   rownames(spotfile_tissue) <- paste0(spotfile$barcode, "-1")
   
+  # save new tissue position file with the correct columns for creating STutility object
   write.csv(spotfile_tissue, 
             paste0(strsplit(infoTable$tissue_paths[i], "tsv"), "csv"), 
             sep = ",")
@@ -97,7 +101,8 @@ for(i in seq_along(infoTable$spotfiles)){
   )
   
   mtx <- object$counts[[i]]
-  mtx <- mtx[,colnames(mtx) %in% spotfile$barcode]
+  mtx <- mtx[,colnames(mtx) %in% spotfile$barcode] 
+  # filter count matrix to retain only spots overlaying tissue
   
   object$mtx[[i]] <- mtx
   
@@ -107,6 +112,7 @@ for(i in seq_along(infoTable$spotfiles)){
 
 signac_object <- list()
 
+# create signac objects for each section and run normalization and dimensionality reduction
 for(i in seq_along(infoTable$spotfiles)){
   assay <- CreateChromatinAssay(object$mtx[[i]], 
                                 fragments = object$frag[[i]])
@@ -129,7 +135,6 @@ combined <- merge(
 )
 
 table(combined$section)
-table(combined$sample)
 
 # add spatial data to meta
 for(i in seq_along(infoTable$tissue_paths)){
@@ -140,7 +145,8 @@ for(i in seq_along(infoTable$tissue_paths)){
 tissue_md_combined <- do.call("rbind", tissue_md) 
 combined <- AddMetaData(combined, tissue_md_combined)
 
-
+# add image
+# image is manually cropped so that it only shows the capture area
 table <- list()
 for(i in dirs){
   table[[i]] <- c(samples = paste0("data/brca", i, "/brca_peak_bc_matrix.h5"),
@@ -172,8 +178,7 @@ for (i in 1:length(dirs)) {
 infoTable$spotfiles <- paste0(strsplit(infoTable$spotfiles, ".csv"), "_positions_list.csv")
 se <- InputFromTable(infoTable, scaleVisium = 1)
 se <- LoadImages(se, time.resolve = F)
-#combined <- readRDS("data/combined_denoised_rna.rds")
-combined@tools[["Staffli"]] <- se@tools$Staffli
+combined@tools[["Staffli"]] <- se@tools$Staffli # create STutility object for spatial plots
 
 #preprocess raw data
 combined <- combined %>% 
@@ -188,7 +193,7 @@ combined <- combined %>%
 write.csv(combined@assays$peaks@data,
           "data/combined_brca_q0_peak_bc_matrix.csv")
 
-#run dca on terminal
+#run DCA on terminal
 # dca for peaks
 ######## 
 # dca combined_brca_q0_peak_bc_matrix.csv dca_peaks_q0_brca \
@@ -203,6 +208,9 @@ write.csv(combined@assays$peaks@data,
 denoised_counts <- read.table("dca_peaks_q0_brca/mean.tsv", row.names = 1) %>% 
   as.matrix()
 colnames(denoised_counts) <- sub("\\.", "-", colnames(denoised_counts))
+
+# add denoised matrix to object
+# filter to retain same spots and features
 combined[["dca"]] <- combined[["peaks"]]
 combined@assays$dca@data <- denoised_counts
 combined@assays$dca@counts <- combined@assays$dca@counts[rownames(combined@assays$dca@counts) %in%
@@ -212,6 +220,8 @@ combined@assays$dca@var.features <- combined@assays$dca@var.features[combined@as
 rm(denoised_counts)
 
 ## compare DCA clustering
+# clustering between DCA and peaks
+# no need for harmony integration as the sections come from the same sample
 DefaultAssay(combined) <- "dca"
 combined <- RunTFIDF(combined) %>%
   FindTopFeatures(min.cutoff = 'q0') %>%
@@ -224,6 +234,7 @@ combined$dca_snn_res.0.5 <- combined$seurat_clusters
 levels(combined$peaks_snn_res.0.5) <- c("2", "4", "1", "3", "0")
 levels(combined$dca_snn_res.0.5) <- c("2", "3", "0", "4", "1")
 
+# Check the proportion of spots assigned to each cluster when using denoised vs original data
 prop <- prop.table(table(combined$peaks_snn_res.0.5, combined$dca_snn_res.0.5), 1)*100
 heatmap(prop[order(nrow(prop):1),], 
         Colv = NA, Rowv = NA, scale="none", 
@@ -240,11 +251,13 @@ Annotation(combined) <- annotations
 gene.activities <- GeneActivity(combined)
 
 # add the gene activity matrix to the Seurat object as a new assay and normalize it
+#remove PCDH and UGT genes
 gene.activities <- gene.activities[-grep("PCDH", rownames(gene.activities)),]
 gene.activities <- gene.activities[-grep("UGT", rownames(gene.activities)),]
 combined[['RNA']] <- CreateAssayObject(counts = gene.activities)
 write.csv(combined@assays$RNA@counts, "data/gene_activity_counts_brca.csv")
 
+#run DCA on terminal
 # dca for gene activity
 ######## 
 # dca gene_activity_counts_brca.csv dca_gene_activity_brca \
@@ -259,6 +272,7 @@ colnames(mtx) <- gsub("\\.", "-", colnames(mtx))
 DefaultAssay(combined) <- "RNA"
 combined <- subset(combined, cells = colnames(mtx))
 
+# add denoised matrix to object
 combined[["RNA_dca"]] <- CreateAssayObject(counts = as.matrix(mtx))
 rm(mtx)
 saveRDS(combined, "results/combined_brca_denoised_rna.rds")
