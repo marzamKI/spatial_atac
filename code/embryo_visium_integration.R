@@ -174,3 +174,62 @@ heatmap.2(prop[order(nrow(prop):1),],
           Colv = NA, Rowv = NA, scale="none", 
           xlab="peaks cluster", ylab="dca clusters", 
           col = hm_colors, RowSideColors=rev(visium_dca), ColSideColors = bright_visium)
+
+
+## correlation between gene accessibility and expression
+Idents(visium) <- "seurat_clusters_harmony"
+
+# group clusters into anatomical structures - visium
+visium$anatomical <- ifelse(visium@active.ident %in% c("3", "2","4"), 
+                            "CNS",
+                            ifelse(visium@active.ident %in% c("1", "9", "11"),
+                                   "Men/PNS",
+                                   ifelse(visium@active.ident %in% c("0","5","6", "8"),
+                                          "Mesenchyme",
+                                          ifelse(visium@active.ident %in% "7",
+                                                 "Liver", "Heart"))))
+
+# group clusters into anatomical structures - atac
+combined$anatomical <- ifelse(combined@active.ident %in% c("7", "2","5"), 
+                              "CNS",
+                              ifelse(combined@active.ident %in% c("3", "8", "4", "9"),
+                                     "Men/PNS",
+                                     ifelse(combined@active.ident %in% c("0","1","10"),
+                                            "Mesenchyme",
+                                            "Liver")))
+
+# avg
+Idents(visium) <- "anatomical"; Idents(combined) <- "anatomical"
+DefaultAssay(visium) <- "RNA"; DefaultAssay(combined) <- "RNA"
+
+# integrate data
+###  Compute co-embedding  ###
+combined$mode <- "ATAC"; visium$mode <- "Visium"
+obj_list <- list(combined, visium)
+
+obj_list <- lapply(X = obj_list, FUN = function(x) {
+  x <- NormalizeData(x)
+  x <- FindVariableFeatures(x, selection.method = "vst", nfeatures = 18000)
+})
+features <- SelectIntegrationFeatures(object.list = obj_list, nfeatures = 18000)
+anchors <- FindIntegrationAnchors(object.list = obj_list, anchor.features = features)
+coembed <- IntegrateData(anchorset = anchors)
+
+coembed$anatomical_mode <- paste0(coembed$anatomical, "_", coembed$mode) 
+Idents(coembed) <- "anatomical_mode"
+avg <- AverageExpression(object = coembed, assays = "integrated")
+avg <- log1p(x = avg$integrated) %>% as.data.frame()
+
+plots_all <- list()
+for(i in levels(Idents(coembed))){
+  for(j in levels(Idents(coembed))){
+    n <- paste0(i, "_", j)
+    plots_all[[n]] <- ggplot(avg, aes_(as.name(i), as.name(j))) +
+      geom_point(alpha = 0.4) + 
+      xlab(i) + 
+      ylab(j) +
+      theme_bw()
+  }
+}
+ggpubr::ggarrange(plotlist = plots_all)
+
